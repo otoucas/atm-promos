@@ -24,18 +24,25 @@ du réseau mobile / wifi peu fiable en magasin).
 5. Les promotions expirées sont **archivées automatiquement** (comparaison
    quotidienne avec la date de fin de validité).
 
-## ⚠️ Point technique à vérifier avant mise en production
+## Mécanisme HighCo (vérifié le 2026-07-02)
 
-Le format exact de la réponse renvoyée par HighCo quand on appelle l'URL/la
-référence encodée dans le QR **n'a pas été vérifié** contre un vrai QR code
-(texte brut, JSON, page HTML, ou pass Wallet Apple/Google). L'adaptateur
-`app/highco.py` gère au mieux ces trois cas mais peut échouer à extraire le
-bon code selon le format réel.
+Le lien encodé dans le QR HighCo Nifty pointe vers une plateforme de
+distribution de pass Apple Wallet (PassKit). `app/highco.py` reproduit le
+parcours réel en 2 requêtes HTTP (pas besoin de navigateur ni de JS) :
 
-**Avant d'utiliser l'outil en caisse** : scanner un vrai QR HighCo (avec un
-lecteur QR classique ou en inspectant la requête réseau depuis un téléphone),
-regarder ce que renvoie la requête, et ajuster `_extract_code()` dans
-`app/highco.py` si besoin.
+1. `GET` la référence avec un User-Agent mobile → page d'atterrissage HTML
+   contenant les paramètres du bouton "Ajouter au Wallet" en clair, plus un
+   cookie de session.
+2. `POST` ces paramètres vers `/pass/apple/generate` (même session) →
+   réponse `application/vnd.apple.pkpass` (un zip), dont
+   `barcodes[0].message` (`app/pkpass_utils.py`) est le code à saisir en
+   caisse (format Code128, ~13 caractères alphanumériques).
+
+Vérifié en conditions réelles contre une promotion HighCo en cours : deux
+appels distincts ont chacun renvoyé un code valide. Si HighCo fait évoluer
+sa plateforme de distribution, ce flux pourra nécessiter un ajustement —
+en cas d'échec inattendu, inspecter `HighCoResponseError.raw_excerpt` pour
+voir ce qui a réellement été reçu.
 
 ## Lancer en local (Docker — recommandé)
 
