@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block header %}Administration{% endblock %}
+{% block header %}Paramètres{% endblock %}
 {% block header_link %}<a href="/">Retour à la grille</a>{% endblock %}
 {% block content %}
 <form class="stacked" method="post" action="/admin/login">
   {% if error %}<div class="error-box">{{ error }}</div>{% endif %}
-  <label for="password">Mot de passe admin</label>
+  <label for="password">Mot de passe</label>
   <input type="password" id="password" name="password" autofocus required>
   <button type="submit">Se connecter</button>
 </form>
