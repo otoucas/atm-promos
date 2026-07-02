@@ -1,33 +1,47 @@
 """Adapter that turns a promotion's HighCo reference (the URL/identifier decoded
 from its QR code) into a fresh redemption code for the till.
 
-⚠️ PARTIALLY VERIFIED (2026-07-02): a real HighCo Nifty link (highcodata.walletpass.fr,
-a PassKit-style wallet distribution platform) was inspected with a desktop User-Agent.
-It redirects (3 hops) to an HTML landing page that says "scan this QR with your phone
-to download your pass" — i.e. a *non-wallet-capable* client never gets a code directly.
-The working theory, NOT YET CONFIRMED, is that a request with a mobile Safari
-User-Agent gets served the actual `.pkpass` file (a zip containing `pass.json`,
-whose `barcodes[].message` field holds the code — see pkpass_utils.py). This has
-not been tested live: doing so may mint a real, single-use redemption code against
-an actual in-flight promotion, so it needs to happen deliberately, not from
-automated retries. Confirm before relying on this in production.
+✅ VERIFIED (2026-07-02) against a real, live HighCo Nifty link (Fixodent
+promotion). The flow is a two-step Apple Wallet (PassKit) distribution:
+
+1. GET the reference URL with a mobile Safari User-Agent, following redirects.
+   HighCo's platform (highcodata.walletpass.fr) lands on an HTML page with an
+   "Add to Wallet" button. The button's `onclick="pkpassGenerate(...)"` call
+   carries the parameters needed for step 2 (pass_template_id, url_id, token,
+   token_mgs, csrf_token) — no JS execution needed, they're plain text in the
+   HTML. A session cookie (PHPSESSID) is set on this request and must be
+   carried into step 2, or the CSRF token is rejected.
+2. POST that data as JSON to `{origin}/pass/apple/generate` (path taken from
+   `<meta name="url">` on the landing page) with
+   `Accept: application/vnd.apple.pkpass`, reusing the same cookies. A 200
+   response body *is* the `.pkpass` file (a zip — see pkpass_utils.py) whose
+   `barcodes[0].message` is the actual redemption code (e.g. "HCNxftz4UVR3r",
+   barcode format Code128 — a linear barcode, not a QR, which matches a
+   pharmacy till scanner).
+
+Each call mints a new, real pass/code — do not retry blindly or call more
+than once per till transaction.
 """
 
 import re
+from urllib.parse import urljoin
 
 import httpx
 
 from .pkpass_utils import extract_code_from_pkpass
 
-_CODE_PATTERN = re.compile(r"\b[A-Z0-9]{6,14}\b")
-_JSON_CODE_KEYS = ("code", "coupon_code", "redemption_code", "voucher_code", "barcode")
-
-# iOS Safari UA — HighCo's wallet-distribution platform appears to serve the
-# actual .pkpass file only to clients that look wallet-capable (unverified).
+# iOS Safari UA — HighCo's wallet-distribution platform only serves the
+# "Add to Wallet" landing page (and thus the generate button/params) to
+# clients that look wallet-capable.
 _MOBILE_USER_AGENT = (
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 "
     "(KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
 )
+
+_GENERATE_CALL_PATTERN = re.compile(
+    r"pkpassGenerate\(\s*'([^']*)'\s*,\s*'([^']*)'\s*,\s*'([^']*)'\s*,\s*'([^']*)'\s*,\s*'([^']*)'\s*,\s*'([^']*)'\s*\)"
+)
+_GENERATE_URL_META_PATTERN = re.compile(r'<meta\s+name="url"\s+content="([^"]+)"')
 
 
 class HighCoResponseError(RuntimeError):
@@ -39,27 +53,60 @@ class HighCoResponseError(RuntimeError):
 def generate_code(reference: str, timeout: float = 15.0) -> str:
     """Call the HighCo endpoint identified by `reference` and return a fresh code.
 
-    Each call is expected to mint a new, single-use code (one call = one till
-    transaction) — do not cache or reuse the result.
+    Each call mints a new, single-use code (one call = one till transaction) —
+    do not cache or reuse the result, and don't call this speculatively.
     """
-    try:
-        response = httpx.get(
-            reference,
-            timeout=timeout,
-            follow_redirects=True,
-            headers={"User-Agent": _MOBILE_USER_AGENT},
+    with httpx.Client(
+        timeout=timeout, follow_redirects=True, headers={"User-Agent": _MOBILE_USER_AGENT}
+    ) as client:
+        try:
+            landing = client.get(reference)
+            landing.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise HighCoResponseError(f"Requête vers le lien HighCo échouée : {exc}") from exc
+
+        params = _parse_generate_params(landing.text)
+        generate_url = _parse_generate_url(landing.text, str(landing.url))
+
+        try:
+            pass_response = client.post(
+                generate_url,
+                json={
+                    "pass_template_id": params[0],
+                    "url_id": params[1],
+                    "token": params[2],
+                    "token_mgs": params[3],
+                    "csrf_token": params[4],
+                },
+                headers={"Accept": "application/vnd.apple.pkpass", "Referer": str(landing.url)},
+            )
+        except httpx.HTTPError as exc:
+            raise HighCoResponseError(f"Requête de génération du pass échouée : {exc}") from exc
+
+    return _extract_code_from_generate_response(pass_response)
+
+
+def _parse_generate_params(html: str) -> tuple:
+    match = _GENERATE_CALL_PATTERN.search(html)
+    if not match:
+        raise HighCoResponseError(
+            "Page HighCo inattendue : bouton 'Ajouter au Wallet' introuvable "
+            "(structure de page différente de celle vérifiée le 2026-07-02 ?)",
+            raw_excerpt=html[:500],
         )
-        response.raise_for_status()
-    except httpx.HTTPError as exc:
-        raise HighCoResponseError(f"Requête HighCo échouée : {exc}") from exc
-
-    return _extract_code(response)
+    return match.groups()
 
 
-def _extract_code(response: httpx.Response) -> str:
+def _parse_generate_url(html: str, landing_url: str) -> str:
+    match = _GENERATE_URL_META_PATTERN.search(html)
+    path = match.group(1) if match else "/pass/apple/generate"
+    return urljoin(landing_url, path)
+
+
+def _extract_code_from_generate_response(response: httpx.Response) -> str:
     content_type = response.headers.get("content-type", "")
 
-    if "application/vnd.apple.pkpass" in content_type:
+    if response.status_code == 200 and "application/vnd.apple.pkpass" in content_type:
         code = extract_code_from_pkpass(response.content)
         if code:
             return code
@@ -67,42 +114,20 @@ def _extract_code(response: httpx.Response) -> str:
             "Pass Wallet reçu mais aucun code trouvé dans pass.json", raw_excerpt=f"{len(response.content)} bytes"
         )
 
-    if "wallet" in content_type:
+    # Non-200 responses are JSON, sometimes with a {"redirect": "..."} the JS
+    # follows client-side (e.g. "already generated" / expired states).
+    try:
+        data = response.json()
+    except ValueError:
+        data = None
+
+    if data is not None:
         raise HighCoResponseError(
-            "La réponse HighCo est un pass Wallet d'un format inattendu — extraction non implémentée.",
-            raw_excerpt=f"content-type={content_type}",
+            f"HighCo a refusé la génération du pass (HTTP {response.status_code}) : {data}",
+            raw_excerpt=str(data)[:500],
         )
 
-    if "json" in content_type:
-        try:
-            data = response.json()
-        except ValueError as exc:
-            raise HighCoResponseError("Réponse JSON illisible", raw_excerpt=response.text[:500]) from exc
-        for key in _JSON_CODE_KEYS:
-            if key in data and data[key]:
-                return str(data[key])
-        raise HighCoResponseError(
-            "Réponse JSON sans champ de code reconnu", raw_excerpt=str(data)[:500]
-        )
-
-    text = response.text.strip()
-
-    if "text/html" in content_type or text.startswith("<"):
-        if "Scannez ce QR code" in text or "télécharger votre pass" in text:
-            raise HighCoResponseError(
-                "HighCo a renvoyé la page de repli « scannez avec votre téléphone » au lieu du pass — "
-                "le User-Agent utilisé n'est probablement pas reconnu comme compatible Wallet.",
-                raw_excerpt=text[:500],
-            )
-        match = _CODE_PATTERN.search(text)
-        if match:
-            return match.group(0)
-        raise HighCoResponseError("Aucun code trouvé dans la page HTML", raw_excerpt=text[:500])
-
-    if text:
-        match = _CODE_PATTERN.fullmatch(text) or _CODE_PATTERN.search(text)
-        if match:
-            return match.group(0)
-        return text  # fall back to whatever plain text was returned
-
-    raise HighCoResponseError("Réponse HighCo vide ou de format non reconnu", raw_excerpt=repr(response.content[:200]))
+    raise HighCoResponseError(
+        f"Réponse inattendue lors de la génération du pass (HTTP {response.status_code}, {content_type})",
+        raw_excerpt=response.text[:500],
+    )
