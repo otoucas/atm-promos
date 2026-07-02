@@ -11,7 +11,7 @@
   <table class="admin-table">
     <thead>
       <tr>
-        <th>Valider</th>
+        <th><input type="checkbox" id="select-all" title="Tout sélectionner" onclick="document.querySelectorAll('input[name=selected]').forEach(cb => cb.checked = this.checked)"></th>
         <th>Marque</th>
         <th>Opération / produit</th>
         <th>Début</th>

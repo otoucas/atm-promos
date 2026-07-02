@@ -21,6 +21,7 @@ from email.message import Message
 from sqlalchemy.orm import Session
 
 from . import config
+from .date_extraction import extract_validity_dates
 from .logos import fetch_logo_url
 from .models import STATUS_PENDING, SOURCE_EMAIL, Promotion, ProcessedEmail
 from .qrcode_utils import extract_qr_payload
@@ -50,6 +51,29 @@ def _iter_candidate_parts(msg: Message):
             payload = part.get_payload(decode=True)
             if payload:
                 yield filename, content_type, payload
+
+
+def _get_body_text(msg: Message) -> str:
+    for part in msg.walk():
+        if part.get_content_type() == "text/plain":
+            payload = part.get_payload(decode=True)
+            if payload:
+                charset = part.get_content_charset() or "utf-8"
+                try:
+                    return payload.decode(charset, errors="replace")
+                except LookupError:
+                    return payload.decode("utf-8", errors="replace")
+    for part in msg.walk():
+        if part.get_content_type() == "text/html":
+            payload = part.get_payload(decode=True)
+            if payload:
+                charset = part.get_content_charset() or "utf-8"
+                try:
+                    html = payload.decode(charset, errors="replace")
+                except LookupError:
+                    html = payload.decode("utf-8", errors="replace")
+                return re.sub(r"<[^>]+>", " ", html)
+    return ""
 
 
 def _decode_subject(raw_subject: str) -> str:
@@ -142,6 +166,7 @@ def poll_gmail_once(db: Session) -> int:
 
             if qr_payload:
                 brand_name = _guess_brand_name(subject)
+                valid_from, valid_until = extract_validity_dates(_get_body_text(msg))
                 promo = Promotion(
                     brand_name=brand_name,
                     highco_reference=qr_payload,
@@ -149,6 +174,8 @@ def poll_gmail_once(db: Session) -> int:
                     source=SOURCE_EMAIL,
                     raw_email_subject=subject,
                     logo_url=fetch_logo_url(brand_name),
+                    valid_from=valid_from,
+                    valid_until=valid_until,
                 )
                 db.add(promo)
                 created += 1
