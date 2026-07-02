@@ -27,6 +27,7 @@ class Promotion(Base):
     logo_url = Column(Text, nullable=True)  # externally fetched logo (hotlinked)
     logo_path = Column(Text, nullable=True)  # locally uploaded/overridden logo, takes priority over logo_url
     raw_email_subject = Column(Text, nullable=True)
+    source_message_id = Column(String(255), nullable=True)  # Gmail Message-ID, for SOURCE_EMAIL promotions only
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     validated_at = Column(DateTime, nullable=True)
     archived_at = Column(DateTime, nullable=True)
@@ -38,6 +39,20 @@ class Promotion(Base):
         if self.operation_label:
             return f"{self.brand_name} — {self.operation_label}"
         return self.brand_name
+
+    @property
+    def is_complete(self) -> bool:
+        """Best-effort check that this promotion's data is usable as-is —
+        drives the pre-sorted green/red grouping on the validation screen."""
+        if not self.brand_name or self.brand_name.strip() in ("", "Promotion à nommer"):
+            return False
+        if len(self.brand_name) > 60:  # likely the whole subject line, unparsed
+            return False
+        if not self.valid_from or not self.valid_until:
+            return False
+        if self.valid_from > self.valid_until:
+            return False
+        return True
 
 
 class GeneratedCode(Base):

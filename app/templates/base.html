@@ -14,5 +14,28 @@
   <main>
     {% block content %}{% endblock %}
   </main>
+  <script>
+    document.querySelectorAll('.admin-table thead th').forEach(th => {
+      const handle = document.createElement('span');
+      handle.className = 'col-resize-handle';
+      th.appendChild(handle);
+      handle.addEventListener('mousedown', e => {
+        e.preventDefault();
+        const startX = e.pageX;
+        const startWidth = th.offsetWidth;
+        handle.classList.add('active');
+        const onMove = e2 => {
+          th.style.width = Math.max(36, startWidth + (e2.pageX - startX)) + 'px';
+        };
+        const onUp = () => {
+          handle.classList.remove('active');
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+        };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+      });
+    });
+  </script>
 </body>
 </html>

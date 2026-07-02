@@ -219,6 +219,7 @@ def poll_gmail_once(db: Session) -> int:
                     status=STATUS_PENDING,
                     source=SOURCE_EMAIL,
                     raw_email_subject=subject,
+                    source_message_id=message_id,
                     logo_path=logo_path,
                     logo_url=None if logo_path else fetch_logo_url(brand_name),
                     valid_from=valid_from,

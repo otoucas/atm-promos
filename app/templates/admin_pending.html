@@ -6,7 +6,26 @@
 
 {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
 
-{% if pending %}
+{% macro row(promo, row_class) %}
+<tr class="{{ row_class }}">
+  <td><input type="checkbox" name="selected" value="{{ promo.id }}"></td>
+  <td>
+    {% if promo.logo_path %}
+      <img src="/media/logos/{{ promo.logo_path }}" alt="" style="height:36px; max-width:60px; object-fit:contain;">
+    {% elif promo.logo_url %}
+      <img src="{{ promo.logo_url }}" alt="" style="height:36px; max-width:60px; object-fit:contain;" onerror="this.style.display='none'">
+    {% else %}—{% endif %}
+  </td>
+  <td><input type="text" name="brand_name_{{ promo.id }}" value="{{ promo.brand_name }}" required></td>
+  <td><input type="text" name="operation_label_{{ promo.id }}" value="{{ promo.operation_label or '' }}"></td>
+  <td><input type="date" name="valid_from_{{ promo.id }}" value="{{ promo.valid_from or '' }}"></td>
+  <td><input type="date" name="valid_until_{{ promo.id }}" value="{{ promo.valid_until or '' }}"></td>
+  <td>{{ promo.source }}</td>
+  <td>{{ promo.raw_email_subject or '—' }}</td>
+</tr>
+{% endmacro %}
+
+{% if complete or incomplete %}
 <form method="post" action="/admin/pending/validate">
   <div class="panel">
   <table class="admin-table">
@@ -20,45 +39,23 @@
         <th>Fin</th>
         <th>Source</th>
         <th>Sujet du mail</th>
-        <th></th>
       </tr>
     </thead>
     <tbody>
-      {% for promo in pending %}
-      <tr>
-        <td><input type="checkbox" name="selected" value="{{ promo.id }}"></td>
-        <td>
-          {% if promo.logo_path %}
-            <img src="/media/logos/{{ promo.logo_path }}" alt="" style="height:36px; max-width:60px; object-fit:contain;">
-          {% elif promo.logo_url %}
-            <img src="{{ promo.logo_url }}" alt="" style="height:36px; max-width:60px; object-fit:contain;" onerror="this.style.display='none'">
-          {% else %}
-            —
-          {% endif %}
-        </td>
-        <td><input type="text" name="brand_name_{{ promo.id }}" value="{{ promo.brand_name }}" required></td>
-        <td><input type="text" name="operation_label_{{ promo.id }}" value="{{ promo.operation_label or '' }}"></td>
-        <td><input type="date" name="valid_from_{{ promo.id }}" value="{{ promo.valid_from or '' }}"></td>
-        <td><input type="date" name="valid_until_{{ promo.id }}" value="{{ promo.valid_until or '' }}"></td>
-        <td>{{ promo.source }}</td>
-        <td>{{ promo.raw_email_subject or '—' }}</td>
-        <td>
-          <button type="submit" form="delete-{{ promo.id }}" style="color:var(--danger); background:none; border:none; cursor:pointer;">Supprimer</button>
-        </td>
-      </tr>
-      {% endfor %}
+      {% for promo in complete %}{{ row(promo, 'row-complete') }}{% endfor %}
+      {% for promo in incomplete %}{{ row(promo, 'row-incomplete') }}{% endfor %}
     </tbody>
   </table>
   </div>
-  <div style="margin-top:16px;">
-    <button type="submit">Valider la sélection</button>
+  <div style="margin-top:16px; display:flex; gap:10px; flex-wrap:wrap;">
+    <button type="submit" formaction="/admin/pending/validate">Valider la sélection</button>
+    <button type="submit" formaction="/admin/pending/reject-reprocess" style="background:var(--muted);">Rejeter → relire le mail</button>
+    <button type="submit" formaction="/admin/pending/reject-archive" style="background:var(--danger);">Rejeter → archiver</button>
   </div>
 </form>
-
-{% for promo in pending %}
-<form id="delete-{{ promo.id }}" method="post" action="/admin/promotions/{{ promo.id }}/delete"></form>
-{% endfor %}
-
+<p style="color:var(--muted); font-size:0.85rem; margin-top:12px;">
+  Vert : marque, montant et dates renseignés. Rouge : donnée manquante ou incohérente (dates absentes ou inversées) — à corriger et valider, ou à rejeter.
+</p>
 {% else %}
 <div class="empty-state">Aucune promotion en attente.</div>
 {% endif %}

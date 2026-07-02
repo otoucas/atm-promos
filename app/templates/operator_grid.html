@@ -9,7 +9,7 @@
 <div class="grid" id="grid">
   {% for promo in promotions %}
   <form class="tile-form" method="post" action="/generate/{{ promo.id }}">
-    <button type="submit" class="tile">
+    <button type="submit" class="tile{% if promo.id in conflict_ids %} conflict{% endif %}"{% if promo.id in conflict_ids %} title="Une autre promotion de cette marque a une période de validité qui se chevauche — vérifier avant utilisation."{% endif %}>
       <span class="visual">
         {% if promo.logo_path %}
           <img src="/media/logos/{{ promo.logo_path }}" alt="{{ promo.brand_name }}">

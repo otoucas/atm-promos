@@ -11,7 +11,7 @@
   <thead><tr><th>Visuel</th><th>Marque</th><th>Montant</th><th>Validité</th><th>Source</th><th></th></tr></thead>
   <tbody>
     {% for promo in active %}
-    <tr>
+    <tr class="{{ 'row-conflict' if promo.id in conflict_ids else '' }}">
       <td>
         {% if promo.logo_path %}<img src="/media/logos/{{ promo.logo_path }}" style="height:36px; max-width:60px; object-fit:contain;">
         {% elif promo.logo_url %}<img src="{{ promo.logo_url }}" style="height:36px; max-width:60px; object-fit:contain;" onerror="this.style.display='none'">

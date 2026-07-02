@@ -23,8 +23,10 @@ from .models import (
     STATUS_PENDING,
     SOURCE_MANUAL,
     GeneratedCode,
+    ProcessedEmail,
     Promotion,
 )
+from .promotion_rules import find_conflicting_ids
 from .qrcode_utils import extract_qr_payload
 
 logging.basicConfig(level=logging.INFO)
@@ -75,7 +77,10 @@ def operator_grid(request: Request, db: Session = Depends(get_db)):
         .order_by(Promotion.brand_name)
         .all()
     )
-    return templates.TemplateResponse("operator_grid.html", {"request": request, "promotions": promotions})
+    conflict_ids = find_conflicting_ids(promotions)
+    return templates.TemplateResponse(
+        "operator_grid.html", {"request": request, "promotions": promotions, "conflict_ids": conflict_ids}
+    )
 
 
 @app.post("/generate/{promotion_id}", response_class=HTMLResponse)
@@ -129,8 +134,18 @@ def admin_logout(request: Request):
 @app.get("/admin/pending", response_class=HTMLResponse)
 def admin_pending(request: Request, db: Session = Depends(get_db)):
     _require_admin(request)
-    pending = db.query(Promotion).filter(Promotion.status == STATUS_PENDING).order_by(Promotion.created_at).all()
-    return templates.TemplateResponse("admin_pending.html", {"request": request, "pending": pending, "flash": request.query_params.get("flash")})
+    pending = db.query(Promotion).filter(Promotion.status == STATUS_PENDING).order_by(Promotion.brand_name).all()
+    complete = [p for p in pending if p.is_complete]
+    incomplete = [p for p in pending if not p.is_complete]
+    return templates.TemplateResponse(
+        "admin_pending.html",
+        {
+            "request": request,
+            "complete": complete,
+            "incomplete": incomplete,
+            "flash": request.query_params.get("flash"),
+        },
+    )
 
 
 @app.post("/admin/pending/validate")
@@ -166,6 +181,47 @@ async def admin_pending_validate(request: Request, db: Session = Depends(get_db)
     return RedirectResponse(f"/admin/pending?flash={validated_count} promotion(s) validée(s)", status_code=303)
 
 
+@app.post("/admin/pending/reject-reprocess")
+async def admin_pending_reject_reprocess(request: Request, db: Session = Depends(get_db)):
+    """Discards the selected pending promotions AND their processed-email
+    marker, so the next Gmail poll re-reads the source email from scratch —
+    for cases where the extracted data is wrong/incomplete and a fresh pass
+    might do better (e.g. after fixing the parsing logic)."""
+    _require_admin(request)
+    form = await request.form()
+    selected_ids = {int(v) for v in form.getlist("selected")}
+
+    count = 0
+    for promo in db.query(Promotion).filter(Promotion.id.in_(selected_ids)).all():
+        if promo.source_message_id:
+            db.query(ProcessedEmail).filter_by(message_id=promo.source_message_id).delete()
+        db.delete(promo)
+        count += 1
+
+    db.commit()
+    return RedirectResponse(
+        f"/admin/pending?flash={count} promotion(s) rejetée(s) — relues au prochain relevé Gmail", status_code=303
+    )
+
+
+@app.post("/admin/pending/reject-archive")
+async def admin_pending_reject_archive(request: Request, db: Session = Depends(get_db)):
+    """Discards the selected pending promotions for good — archived without
+    ever appearing at the till, and not re-read from the source email."""
+    _require_admin(request)
+    form = await request.form()
+    selected_ids = {int(v) for v in form.getlist("selected")}
+
+    count = 0
+    for promo in db.query(Promotion).filter(Promotion.id.in_(selected_ids)).all():
+        promo.status = STATUS_ARCHIVED
+        promo.archived_at = datetime.datetime.utcnow()
+        count += 1
+
+    db.commit()
+    return RedirectResponse(f"/admin/pending?flash={count} promotion(s) rejetée(s) et archivée(s)", status_code=303)
+
+
 @app.post("/admin/promotions/{promotion_id}/delete")
 def admin_delete_promotion(promotion_id: int, request: Request, db: Session = Depends(get_db)):
     _require_admin(request)
@@ -184,8 +240,10 @@ def admin_promotions(request: Request, db: Session = Depends(get_db)):
     archived = (
         db.query(Promotion).filter(Promotion.status == STATUS_ARCHIVED).order_by(Promotion.archived_at.desc()).all()
     )
+    conflict_ids = find_conflicting_ids(active)
     return templates.TemplateResponse(
-        "admin_promotions.html", {"request": request, "active": active, "archived": archived}
+        "admin_promotions.html",
+        {"request": request, "active": active, "archived": archived, "conflict_ids": conflict_ids},
     )
 
 
