@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block header %}Historique des codes générés{% endblock %}
+{% block header_link %}<a href="/">Retour à la grille</a>{% endblock %}
+{% block content %}
+{% include "admin_nav.html" %}
+
+{% if history %}
+<table class="admin-table">
+  <thead><tr><th>Date/heure</th><th>Marque</th><th>Opération</th><th>Code</th></tr></thead>
+  <tbody>
+    {% for entry in history %}
+    <tr>
+      <td>{{ entry.generated_at.strftime('%d/%m/%Y %H:%M') }}</td>
+      <td>{{ entry.promotion.brand_name }}</td>
+      <td>{{ entry.promotion.operation_label or '—' }}</td>
+      <td>{{ entry.code }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="empty-state">Aucun code généré pour l'instant.</div>
+{% endif %}
+{% endblock %}

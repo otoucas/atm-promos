@@ -1,0 +1,61 @@
+import datetime
+
+from sqlalchemy import Column, DateTime, Date, ForeignKey, Integer, String, Text
+from sqlalchemy.orm import relationship
+
+from .database import Base
+
+STATUS_PENDING = "pending"
+STATUS_ACTIVE = "active"
+STATUS_ARCHIVED = "archived"
+
+SOURCE_EMAIL = "email"
+SOURCE_MANUAL = "manual"
+
+
+class Promotion(Base):
+    __tablename__ = "promotions"
+
+    id = Column(Integer, primary_key=True)
+    brand_name = Column(String(200), nullable=False, default="")
+    operation_label = Column(String(200), nullable=True)  # e.g. product/operation name, to disambiguate multi-op brands
+    highco_reference = Column(Text, nullable=False)  # URL or identifier extracted from the QR code
+    valid_from = Column(Date, nullable=True)
+    valid_until = Column(Date, nullable=True)
+    status = Column(String(20), nullable=False, default=STATUS_PENDING)
+    source = Column(String(20), nullable=False, default=SOURCE_MANUAL)
+    logo_url = Column(Text, nullable=True)  # externally fetched logo (hotlinked)
+    logo_path = Column(Text, nullable=True)  # locally uploaded/overridden logo, takes priority over logo_url
+    raw_email_subject = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    validated_at = Column(DateTime, nullable=True)
+    archived_at = Column(DateTime, nullable=True)
+
+    generated_codes = relationship("GeneratedCode", back_populates="promotion")
+
+    @property
+    def display_name(self) -> str:
+        if self.operation_label:
+            return f"{self.brand_name} — {self.operation_label}"
+        return self.brand_name
+
+
+class GeneratedCode(Base):
+    __tablename__ = "generated_codes"
+
+    id = Column(Integer, primary_key=True)
+    promotion_id = Column(Integer, ForeignKey("promotions.id"), nullable=False)
+    code = Column(Text, nullable=False)
+    generated_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    promotion = relationship("Promotion", back_populates="generated_codes")
+
+
+class ProcessedEmail(Base):
+    """Tracks Gmail message IDs already ingested, to avoid re-processing on each poll."""
+
+    __tablename__ = "processed_emails"
+
+    id = Column(Integer, primary_key=True)
+    message_id = Column(String(255), unique=True, nullable=False)
+    processed_at = Column(DateTime, default=datetime.datetime.utcnow)

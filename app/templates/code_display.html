@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="code-card">
+  <div class="promo-name">{{ promotion.display_name }}</div>
+  {% if code %}
+    <div class="code-value" id="code-value">{{ code }}</div>
+    <button class="copy-btn" id="copy-btn" onclick="copyCode()">Copier le code</button>
+  {% else %}
+    <div class="error-box">
+      Impossible de générer le code pour l'instant.<br>
+      {{ error }}
+    </div>
+  {% endif %}
+  <div><a class="back-link" href="/">&larr; Retour à la grille</a></div>
+</div>
+
+<script>
+  function copyCode() {
+    const text = document.getElementById('code-value').innerText;
+    navigator.clipboard.writeText(text).then(() => {
+      const btn = document.getElementById('copy-btn');
+      btn.textContent = 'Copié ✓';
+      btn.classList.add('copied');
+    });
+  }
+</script>
+{% endblock %}

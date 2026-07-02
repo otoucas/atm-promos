@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block header %}Promotions{% endblock %}
+{% block header_link %}<a href="/">Retour à la grille</a>{% endblock %}
+{% block content %}
+{% include "admin_nav.html" %}
+
+<h3>Actives</h3>
+{% if active %}
+<table class="admin-table">
+  <thead><tr><th>Logo</th><th>Marque</th><th>Opération</th><th>Validité</th><th>Source</th><th></th></tr></thead>
+  <tbody>
+    {% for promo in active %}
+    <tr>
+      <td>
+        {% if promo.logo_path %}<img src="/media/logos/{{ promo.logo_path }}" style="height:32px;">
+        {% elif promo.logo_url %}<img src="{{ promo.logo_url }}" style="height:32px;">
+        {% else %}—{% endif %}
+      </td>
+      <td>{{ promo.brand_name }}</td>
+      <td>{{ promo.operation_label or '—' }}</td>
+      <td>{{ promo.valid_from or '?' }} → {{ promo.valid_until or '?' }}</td>
+      <td>{{ promo.source }}</td>
+      <td style="display:flex; gap:8px; align-items:center;">
+        <form method="post" action="/admin/promotions/{{ promo.id }}/logo" enctype="multipart/form-data" style="margin:0;">
+          <input type="file" name="logo" accept="image/*" style="width:120px;">
+          <button type="submit">Changer logo</button>
+        </form>
+        <form method="post" action="/admin/promotions/{{ promo.id }}/archive" style="margin:0;">
+          <button type="submit">Archiver</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="empty-state">Aucune promotion active.</div>
+{% endif %}
+
+<h3 style="margin-top:32px;">Archivées</h3>
+{% if archived %}
+<table class="admin-table">
+  <thead><tr><th>Marque</th><th>Opération</th><th>Validité</th><th>Archivée le</th></tr></thead>
+  <tbody>
+    {% for promo in archived %}
+    <tr>
+      <td>{{ promo.brand_name }}</td>
+      <td>{{ promo.operation_label or '—' }}</td>
+      <td>{{ promo.valid_from or '?' }} → {{ promo.valid_until or '?' }}</td>
+      <td>{{ promo.archived_at.strftime('%d/%m/%Y') if promo.archived_at else '—' }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="empty-state">Aucune promotion archivée.</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block header %}Promotions en attente de validation{% endblock %}
+{% block header_link %}<a href="/">Retour à la grille</a>{% endblock %}
+{% block content %}
+{% include "admin_nav.html" %}
+
+{% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+
+{% if pending %}
+<form method="post" action="/admin/pending/validate">
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>Valider</th>
+        <th>Marque</th>
+        <th>Opération / produit</th>
+        <th>Début</th>
+        <th>Fin</th>
+        <th>Source</th>
+        <th>Sujet du mail</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for promo in pending %}
+      <tr>
+        <td><input type="checkbox" name="selected" value="{{ promo.id }}"></td>
+        <td><input type="text" name="brand_name_{{ promo.id }}" value="{{ promo.brand_name }}" required></td>
+        <td><input type="text" name="operation_label_{{ promo.id }}" value="{{ promo.operation_label or '' }}"></td>
+        <td><input type="date" name="valid_from_{{ promo.id }}" value="{{ promo.valid_from or '' }}"></td>
+        <td><input type="date" name="valid_until_{{ promo.id }}" value="{{ promo.valid_until or '' }}"></td>
+        <td>{{ promo.source }}</td>
+        <td>{{ promo.raw_email_subject or '—' }}</td>
+        <td>
+          <button type="submit" form="delete-{{ promo.id }}" style="color:var(--danger); background:none; border:none; cursor:pointer;">Supprimer</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div style="margin-top:16px;">
+    <button type="submit">Valider la sélection</button>
+  </div>
+</form>
+
+{% for promo in pending %}
+<form id="delete-{{ promo.id }}" method="post" action="/admin/promotions/{{ promo.id }}/delete"></form>
+{% endfor %}
+
+{% else %}
+<div class="empty-state">Aucune promotion en attente.</div>
+{% endif %}
+{% endblock %}

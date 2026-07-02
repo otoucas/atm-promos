@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block header %}Ajouter une promotion manuellement{% endblock %}
+{% block header_link %}<a href="/">Retour à la grille</a>{% endblock %}
+{% block content %}
+{% include "admin_nav.html" %}
+
+{% if error %}<div class="error-box">{{ error }}</div>{% endif %}
+
+<form class="stacked" method="post" action="/admin/promotions/new" enctype="multipart/form-data">
+  <label for="brand_name">Marque</label>
+  <input type="text" id="brand_name" name="brand_name" required>
+
+  <label for="operation_label">Opération / produit (optionnel)</label>
+  <input type="text" id="operation_label" name="operation_label">
+
+  <label for="valid_from">Début de validité</label>
+  <input type="date" id="valid_from" name="valid_from">
+
+  <label for="valid_until">Fin de validité</label>
+  <input type="date" id="valid_until" name="valid_until">
+
+  <label for="qr_file">Image du QR code (photo ou capture d'écran)</label>
+  <input type="file" id="qr_file" name="qr_file" accept="image/*,application/pdf">
+
+  <label for="highco_reference">— ou — lien / identifiant HighCo collé directement</label>
+  <input type="text" id="highco_reference" name="highco_reference" placeholder="https://...">
+
+  <button type="submit">Créer la promotion</button>
+</form>
+{% endblock %}

@@ -1,0 +1,195 @@
+:root {
+  --tile-size: 180px;
+  --bg: #f4f5f7;
+  --card-bg: #ffffff;
+  --text: #1c1e21;
+  --muted: #6b7280;
+  --accent: #0a7d3d;
+  --accent-dark: #065c2c;
+  --danger: #b3261e;
+  --border: #dde1e6;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+header.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+header.topbar h1 {
+  font-size: 1.1rem;
+  margin: 0;
+}
+
+header.topbar a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+main {
+  padding: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.zoom-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 16px;
+  justify-content: flex-end;
+}
+
+.zoom-controls button {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  font-size: 1.2rem;
+  cursor: pointer;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--tile-size), 1fr));
+  gap: 16px;
+}
+
+.tile-form { margin: 0; }
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  height: var(--tile-size);
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  cursor: pointer;
+  padding: 12px;
+  transition: transform 0.05s ease, box-shadow 0.15s ease;
+}
+
+.tile:hover, .tile:active {
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
+}
+
+.tile img {
+  max-width: 80%;
+  max-height: 55%;
+  object-fit: contain;
+}
+
+.tile .fallback-badge {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 1.2rem;
+}
+
+.tile .label {
+  font-size: 0.9rem;
+  text-align: center;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.empty-state {
+  text-align: center;
+  color: var(--muted);
+  padding: 60px 20px;
+}
+
+.code-card {
+  max-width: 480px;
+  margin: 40px auto;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 32px;
+  text-align: center;
+}
+
+.code-card .promo-name {
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.code-value {
+  font-size: 2.4rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 20px;
+  background: var(--bg);
+  border-radius: 12px;
+  margin: 16px 0;
+  word-break: break-all;
+}
+
+.copy-btn {
+  padding: 12px 24px;
+  font-size: 1rem;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent);
+  color: white;
+  cursor: pointer;
+}
+
+.copy-btn.copied { background: var(--accent-dark); }
+
+.error-box {
+  color: var(--danger);
+  background: #fdecea;
+  border: 1px solid var(--danger);
+  border-radius: 10px;
+  padding: 16px;
+  margin: 16px 0;
+  text-align: left;
+}
+
+.back-link {
+  display: inline-block;
+  margin-top: 20px;
+  color: var(--muted);
+}
+
+form.stacked { display: flex; flex-direction: column; gap: 12px; max-width: 480px; }
+form.stacked label { font-size: 0.85rem; color: var(--muted); }
+form.stacked input, form.stacked select { padding: 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 1rem; }
+form.stacked button { padding: 12px; border-radius: 8px; border: none; background: var(--accent); color: white; font-size: 1rem; cursor: pointer; }
+
+table.admin-table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+table.admin-table th, table.admin-table td { text-align: left; padding: 10px; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
+table.admin-table th { color: var(--muted); font-weight: 600; }
+
+.pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 0.75rem; }
+.pill.pending { background: #fff3cd; color: #7a5c00; }
+.pill.active { background: #d3f5df; color: var(--accent-dark); }
+.pill.archived { background: #eee; color: var(--muted); }
+
+.flash { padding: 12px 16px; border-radius: 8px; background: #d3f5df; color: var(--accent-dark); margin-bottom: 16px; }

@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="zoom-controls">
+  <button type="button" onclick="adjustZoom(-20)" aria-label="Réduire">−</button>
+  <button type="button" onclick="adjustZoom(20)" aria-label="Agrandir">+</button>
+</div>
+
+{% if promotions %}
+<div class="grid" id="grid">
+  {% for promo in promotions %}
+  <form class="tile-form" method="post" action="/generate/{{ promo.id }}">
+    <button type="submit" class="tile">
+      {% if promo.logo_path %}
+        <img src="/media/logos/{{ promo.logo_path }}" alt="{{ promo.brand_name }}">
+      {% elif promo.logo_url %}
+        <img src="{{ promo.logo_url }}" alt="{{ promo.brand_name }}" onerror="this.style.display='none'">
+      {% else %}
+        <span class="fallback-badge">{{ promo.brand_name[:2]|upper }}</span>
+      {% endif %}
+      <span class="label">{{ promo.display_name }}</span>
+    </button>
+  </form>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">Aucune promotion active pour le moment.</div>
+{% endif %}
+
+<script>
+  const grid = document.documentElement;
+  const stored = localStorage.getItem('tileSize');
+  if (stored) grid.style.setProperty('--tile-size', stored + 'px');
+
+  function adjustZoom(delta) {
+    const current = parseInt(getComputedStyle(grid).getPropertyValue('--tile-size')) || 180;
+    const next = Math.min(320, Math.max(110, current + delta));
+    grid.style.setProperty('--tile-size', next + 'px');
+    localStorage.setItem('tileSize', next);
+  }
+</script>
+{% endblock %}
