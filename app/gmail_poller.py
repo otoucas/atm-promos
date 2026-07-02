@@ -53,6 +53,18 @@ def _iter_candidate_parts(msg: Message):
                 yield filename, content_type, payload
 
 
+def _extract_pdf_text(data: bytes) -> str:
+    """The validity dates for a "launch" campaign are often only printed on
+    the promotional PDF (shelf-talker), not mentioned in the email body."""
+    import fitz  # PyMuPDF
+
+    try:
+        doc = fitz.open(stream=data, filetype="pdf")
+        return "\n".join(page.get_text() for page in doc)
+    except Exception:
+        return ""
+
+
 def _get_body_text(msg: Message) -> str:
     for part in msg.walk():
         if part.get_content_type() == "text/plain":
@@ -159,14 +171,21 @@ def poll_gmail_once(db: Session) -> int:
 
             subject = _decode_subject(msg.get("Subject", ""))
             qr_payload = None
+            qr_source_filename = ""
+            qr_source_payload = b""
             for filename, content_type, payload in _iter_candidate_parts(msg):
                 qr_payload = extract_qr_payload(payload, filename=filename, content_type=content_type)
                 if qr_payload:
+                    qr_source_filename = filename
+                    qr_source_payload = payload
                     break
 
             if qr_payload:
                 brand_name = _guess_brand_name(subject)
-                valid_from, valid_until = extract_validity_dates(_get_body_text(msg))
+                date_text = _get_body_text(msg)
+                if qr_source_filename.lower().endswith(".pdf") or qr_source_payload[:4] == b"%PDF":
+                    date_text += "\n" + _extract_pdf_text(qr_source_payload)
+                valid_from, valid_until = extract_validity_dates(date_text)
                 promo = Promotion(
                     brand_name=brand_name,
                     highco_reference=qr_payload,

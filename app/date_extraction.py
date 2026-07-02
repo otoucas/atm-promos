@@ -35,11 +35,11 @@ _MONTH_PATTERN = "|".join(_MONTHS_FR.keys())
 _NUMERIC_DATE = r"\d{1,2}[/.]\d{1,2}[/.]\d{2,4}"
 
 _TEXTUAL_RANGE = re.compile(
-    r"du\s+(\d{1,2})(?:er)?\s*(?:(" + _MONTH_PATTERN + r")\s+)?au\s+"
+    r"du\s+(\d{1,2})(?:er)?\s*(?:(" + _MONTH_PATTERN + r")\s+)?(?:jusqu.au|au)\s+"
     r"(\d{1,2})(?:er)?\s+(" + _MONTH_PATTERN + r")\s+(\d{4})",
     re.IGNORECASE,
 )
-_NUMERIC_RANGE = re.compile(rf"du\s+({_NUMERIC_DATE})\s+au\s+({_NUMERIC_DATE})", re.IGNORECASE)
+_NUMERIC_RANGE = re.compile(rf"du\s+({_NUMERIC_DATE})\s+(?:jusqu.au|au)\s+({_NUMERIC_DATE})", re.IGNORECASE)
 
 _TEXTUAL_START = re.compile(
     r"(?:à|a)\s+partir\s+du\s+(\d{1,2})(?:er)?\s+(" + _MONTH_PATTERN + r")\s+(\d{4})", re.IGNORECASE
