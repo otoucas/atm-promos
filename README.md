@@ -87,6 +87,25 @@ instance (Docker Compose ci-dessus) avec sa propre boîte Gmail et son propre
 mot de passe admin, sur un serveur local à son comptoir. Aucun identifiant
 n'est codé en dur — tout passe par `.env` (non versionné, voir `.gitignore`).
 
+## Déploiement sur un hôte déjà accessible depuis Internet
+
+La grille opérateur n'a pas de login : elle part du principe que seul le
+réseau du comptoir peut l'atteindre. Si l'hôte qui fait tourner Docker a
+lui-même une IP publique (serveur distant, VPS...), **ne pas exposer le
+port par défaut** — n'importe qui pourrait alors générer de vrais codes
+HighCo. Utiliser `BIND_ADDRESS` dans `.env` pour ne lier le conteneur qu'à
+une interface privée (par exemple une IP Tailscale), afin que seuls les
+appareils du réseau privé/VPN de la pharmacie puissent y accéder :
+
+```bash
+# .env
+BIND_ADDRESS=100.x.x.x   # IP Tailscale (ou équivalent VPN) de l'hôte
+HOST_PORT=8010
+```
+
+Les postes de comptoir doivent alors rejoindre ce même réseau privé
+(Tailscale ou équivalent) pour accéder à `http://<BIND_ADDRESS>:<HOST_PORT>/`.
+
 ## Prochaine étape (phase 2, hors périmètre de cette version)
 
 Exploiter l'historique des promotions (dates de validité, marques) pour
