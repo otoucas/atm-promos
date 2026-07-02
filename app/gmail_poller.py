@@ -15,6 +15,7 @@ import email
 import imaplib
 import logging
 import re
+import uuid
 from email.header import decode_header, make_header
 from email.message import Message
 
@@ -24,7 +25,7 @@ from . import config
 from .date_extraction import extract_validity_dates
 from .logos import fetch_logo_url
 from .models import STATUS_PENDING, SOURCE_EMAIL, Promotion, ProcessedEmail
-from .qrcode_utils import extract_qr_payload
+from .qrcode_utils import extract_best_product_image, extract_qr_payload
 
 logger = logging.getLogger("gmail_poller")
 
@@ -65,6 +66,12 @@ def _extract_pdf_text(data: bytes) -> str:
         return ""
 
 
+def _save_product_image(image_bytes: bytes, ext: str) -> str:
+    filename = f"{uuid.uuid4().hex}.{ext}"
+    (config.LOGO_DIR / filename).write_bytes(image_bytes)
+    return filename
+
+
 def _get_body_text(msg: Message) -> str:
     for part in msg.walk():
         if part.get_content_type() == "text/plain":
@@ -97,11 +104,12 @@ def _decode_subject(raw_subject: str) -> str:
         return raw_subject
 
 
-# HighCo Nifty subjects consistently look like "PROMO NIFTY <BRAND> 5€ de
+# HighCo Nifty subjects consistently look like "PROMO [NIFTY] <BRAND> 5€ de
 # remise ..." — the brand name sits between the fixed prefix and the first
 # digit (the discount amount). Best-effort only: the admin reviews/corrects
 # every promotion on the validation screen regardless.
-_NIFTY_SUBJECT_PATTERN = re.compile(r"PROMO\s+NIFTY\s+(.+?)\s+\d", re.IGNORECASE)
+_NIFTY_SUBJECT_PATTERN = re.compile(r"PROMO\s+(?:NIFTY\s+)?(.+?)\s+\d", re.IGNORECASE)
+_AMOUNT_PATTERN = re.compile(r"\d+(?:[.,]\d+)?\s*[%€]")
 
 
 def _guess_brand_name(subject: str) -> str:
@@ -110,6 +118,14 @@ def _guess_brand_name(subject: str) -> str:
     if match:
         return match.group(1).strip()[:200]
     return (decoded or "Promotion à nommer").strip()[:200]
+
+
+def _guess_operation_label(subject: str) -> str:
+    """Harmonized "amount/percentage" part of the display name, e.g. "50%" or
+    "0,50€" — pulled from the first discount value mentioned in the subject."""
+    decoded = _decode_subject(subject)
+    match = _AMOUNT_PATTERN.search(decoded)
+    return match.group(0).replace(" ", "") if match else ""
 
 
 def _connect():
@@ -182,17 +198,29 @@ def poll_gmail_once(db: Session) -> int:
 
             if qr_payload:
                 brand_name = _guess_brand_name(subject)
+                operation_label = _guess_operation_label(subject)
+                is_pdf = qr_source_filename.lower().endswith(".pdf") or qr_source_payload[:4] == b"%PDF"
+
                 date_text = _get_body_text(msg)
-                if qr_source_filename.lower().endswith(".pdf") or qr_source_payload[:4] == b"%PDF":
+                if is_pdf:
                     date_text += "\n" + _extract_pdf_text(qr_source_payload)
                 valid_from, valid_until = extract_validity_dates(date_text)
+
+                logo_path = None
+                if is_pdf:
+                    product_image = extract_best_product_image(qr_source_payload)
+                    if product_image:
+                        logo_path = _save_product_image(*product_image)
+
                 promo = Promotion(
                     brand_name=brand_name,
+                    operation_label=operation_label or None,
                     highco_reference=qr_payload,
                     status=STATUS_PENDING,
                     source=SOURCE_EMAIL,
                     raw_email_subject=subject,
-                    logo_url=fetch_logo_url(brand_name),
+                    logo_path=logo_path,
+                    logo_url=None if logo_path else fetch_logo_url(brand_name),
                     valid_from=valid_from,
                     valid_until=valid_until,
                 )
