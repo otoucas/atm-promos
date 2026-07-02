@@ -5,8 +5,9 @@
 {% include "admin_nav.html" %}
 
 {% if history %}
+<div class="panel">
 <table class="admin-table">
-  <thead><tr><th>Date/heure</th><th>Marque</th><th>Opération</th><th>Code</th></tr></thead>
+  <thead><tr><th>Date/heure</th><th>Marque</th><th>Montant</th><th>Code</th></tr></thead>
   <tbody>
     {% for entry in history %}
     <tr>
@@ -18,6 +19,7 @@
     {% endfor %}
   </tbody>
 </table>
+</div>
 {% else %}
 <div class="empty-state">Aucun code généré pour l'instant.</div>
 {% endif %}

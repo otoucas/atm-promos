@@ -6,14 +6,15 @@
 
 <h3>Actives</h3>
 {% if active %}
+<div class="panel">
 <table class="admin-table">
-  <thead><tr><th>Logo</th><th>Marque</th><th>Opération</th><th>Validité</th><th>Source</th><th></th></tr></thead>
+  <thead><tr><th>Visuel</th><th>Marque</th><th>Montant</th><th>Validité</th><th>Source</th><th></th></tr></thead>
   <tbody>
     {% for promo in active %}
     <tr>
       <td>
-        {% if promo.logo_path %}<img src="/media/logos/{{ promo.logo_path }}" style="height:32px;">
-        {% elif promo.logo_url %}<img src="{{ promo.logo_url }}" style="height:32px;">
+        {% if promo.logo_path %}<img src="/media/logos/{{ promo.logo_path }}" style="height:36px; max-width:60px; object-fit:contain;">
+        {% elif promo.logo_url %}<img src="{{ promo.logo_url }}" style="height:36px; max-width:60px; object-fit:contain;" onerror="this.style.display='none'">
         {% else %}—{% endif %}
       </td>
       <td>{{ promo.brand_name }}</td>
@@ -23,7 +24,7 @@
       <td style="display:flex; gap:8px; align-items:center;">
         <form method="post" action="/admin/promotions/{{ promo.id }}/logo" enctype="multipart/form-data" style="margin:0;">
           <input type="file" name="logo" accept="image/*" style="width:120px;">
-          <button type="submit">Changer logo</button>
+          <button type="submit">Changer visuel</button>
         </form>
         <form method="post" action="/admin/promotions/{{ promo.id }}/archive" style="margin:0;">
           <button type="submit">Archiver</button>
@@ -33,14 +34,16 @@
     {% endfor %}
   </tbody>
 </table>
+</div>
 {% else %}
 <div class="empty-state">Aucune promotion active.</div>
 {% endif %}
 
-<h3 style="margin-top:32px;">Archivées</h3>
+<h3>Archivées</h3>
 {% if archived %}
+<div class="panel">
 <table class="admin-table">
-  <thead><tr><th>Marque</th><th>Opération</th><th>Validité</th><th>Archivée le</th></tr></thead>
+  <thead><tr><th>Marque</th><th>Montant</th><th>Validité</th><th>Archivée le</th></tr></thead>
   <tbody>
     {% for promo in archived %}
     <tr>
@@ -52,6 +55,7 @@
     {% endfor %}
   </tbody>
 </table>
+</div>
 {% else %}
 <div class="empty-state">Aucune promotion archivée.</div>
 {% endif %}

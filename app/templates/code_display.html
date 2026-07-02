@@ -1,6 +1,11 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="code-card">
+  {% if promotion.logo_path %}
+    <div class="visual"><img src="/media/logos/{{ promotion.logo_path }}" alt="{{ promotion.brand_name }}"></div>
+  {% elif promotion.logo_url %}
+    <div class="visual"><img src="{{ promotion.logo_url }}" alt="{{ promotion.brand_name }}" onerror="this.parentElement.style.display='none'"></div>
+  {% endif %}
   <div class="promo-name">{{ promotion.display_name }}</div>
   {% if code %}
     <div class="code-value" id="code-value">{{ code }}</div>

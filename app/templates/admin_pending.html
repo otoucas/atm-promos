@@ -8,12 +8,14 @@
 
 {% if pending %}
 <form method="post" action="/admin/pending/validate">
+  <div class="panel">
   <table class="admin-table">
     <thead>
       <tr>
         <th><input type="checkbox" id="select-all" title="Tout sélectionner" onclick="document.querySelectorAll('input[name=selected]').forEach(cb => cb.checked = this.checked)"></th>
+        <th>Visuel</th>
         <th>Marque</th>
-        <th>Opération / produit</th>
+        <th>Montant</th>
         <th>Début</th>
         <th>Fin</th>
         <th>Source</th>
@@ -25,6 +27,15 @@
       {% for promo in pending %}
       <tr>
         <td><input type="checkbox" name="selected" value="{{ promo.id }}"></td>
+        <td>
+          {% if promo.logo_path %}
+            <img src="/media/logos/{{ promo.logo_path }}" alt="" style="height:36px; max-width:60px; object-fit:contain;">
+          {% elif promo.logo_url %}
+            <img src="{{ promo.logo_url }}" alt="" style="height:36px; max-width:60px; object-fit:contain;" onerror="this.style.display='none'">
+          {% else %}
+            —
+          {% endif %}
+        </td>
         <td><input type="text" name="brand_name_{{ promo.id }}" value="{{ promo.brand_name }}" required></td>
         <td><input type="text" name="operation_label_{{ promo.id }}" value="{{ promo.operation_label or '' }}"></td>
         <td><input type="date" name="valid_from_{{ promo.id }}" value="{{ promo.valid_from or '' }}"></td>
@@ -38,6 +49,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
   <div style="margin-top:16px;">
     <button type="submit">Valider la sélection</button>
   </div>
