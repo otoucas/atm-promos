@@ -4,6 +4,7 @@ import uuid
 from pathlib import Path
 
 from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -15,7 +16,7 @@ from . import config, highco
 from .auth import check_password, is_admin
 from .database import get_db, init_db
 from .gmail_poller import poll_gmail_once
-from .jobs import run_auto_archive, run_gmail_poll
+from .jobs import run_auto_archive, run_daily_review, run_gmail_poll
 from .logos import fetch_logo_url
 from .models import (
     STATUS_ACTIVE,
@@ -47,6 +48,9 @@ def on_startup():
     if not config.DISABLE_GMAIL_POLLER:
         scheduler.add_job(run_gmail_poll, "interval", minutes=config.POLL_INTERVAL_MINUTES, id="gmail_poll")
     scheduler.add_job(run_auto_archive, "interval", minutes=config.ARCHIVE_CHECK_INTERVAL_MINUTES, id="auto_archive")
+    scheduler.add_job(
+        run_daily_review, CronTrigger(hour=config.DAILY_REVIEW_HOUR, minute=0), id="daily_review"
+    )
     scheduler.start()
 
 
@@ -73,6 +77,7 @@ def operator_grid(request: Request, db: Session = Depends(get_db)):
         .filter(
             Promotion.status == STATUS_ACTIVE,
             (Promotion.valid_until.is_(None)) | (Promotion.valid_until >= today),
+            (Promotion.valid_from.is_(None)) | (Promotion.valid_from <= today),
         )
         .order_by(Promotion.brand_name)
         .all()

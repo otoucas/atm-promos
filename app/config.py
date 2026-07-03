@@ -30,5 +30,9 @@ GMAIL_ARCHIVE_AFTER_PROCESSING = os.environ.get("GMAIL_ARCHIVE_AFTER_PROCESSING"
 
 POLL_INTERVAL_MINUTES = int(os.environ.get("POLL_INTERVAL_MINUTES", "15"))
 ARCHIVE_CHECK_INTERVAL_MINUTES = int(os.environ.get("ARCHIVE_CHECK_INTERVAL_MINUTES", "60"))
+# Hour (0-23, server local time) for the once-a-day review: archive anything
+# expired (including stale never-validated pending promotions) and log a
+# summary of what's visible/upcoming — in addition to the hourly safety net above.
+DAILY_REVIEW_HOUR = int(os.environ.get("DAILY_REVIEW_HOUR", "6"))
 
 DISABLE_GMAIL_POLLER = os.environ.get("DISABLE_GMAIL_POLLER", "0") == "1"
