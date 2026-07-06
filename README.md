@@ -70,6 +70,20 @@ uvicorn app.main:app --reload
 Nécessite la librairie système `libzbar0` pour le décodage QR
 (`apt-get install libzbar0` sur Debian/Ubuntu).
 
+## Tests
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-dev.txt
+python3 -m pytest
+```
+
+Couvre l'extraction de dates, les règles de conflit entre promotions, la
+logique de dédoublonnage/fusion des mails, et l'heuristique de choix d'image
+produit dans les PDF. Ne touche à aucun vrai mail Gmail ni à un vrai lien
+HighCo (aucun appel réseau, aucun code réel généré).
+
 ## Configuration Gmail
 
 1. Activer la validation en 2 étapes sur le compte Google utilisé.

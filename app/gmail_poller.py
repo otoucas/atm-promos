@@ -108,7 +108,7 @@ def _decode_subject(raw_subject: str) -> str:
 # remise ..." — the brand name sits between the fixed prefix and the first
 # digit (the discount amount). Best-effort only: the admin reviews/corrects
 # every promotion on the validation screen regardless.
-_NIFTY_SUBJECT_PATTERN = re.compile(r"PROMO\s+(?:NIFTY\s+)?(.+?)\s+\d", re.IGNORECASE)
+_NIFTY_SUBJECT_PATTERN = re.compile(r"PROMO\s+(?:\[?NIFTY\]?\s+)?(.+?)\s+\d", re.IGNORECASE)
 _AMOUNT_PATTERN = re.compile(r"\d+(?:[.,]\d+)?\s*[%€]")
 
 

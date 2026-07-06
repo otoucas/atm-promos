@@ -49,6 +49,80 @@
         lightbox.classList.add('open');
       });
     });
+
+    // Génération de code : pop-up interne (fetch + injection) plutôt qu'une
+    // navigation vers une nouvelle page — plus rapide au comptoir, et un clic
+    // à l'extérieur suffit à en sortir. Repli sur la navigation classique
+    // (voir /generate/{id} côté serveur) si le fetch échoue ou si JS est coupé.
+    const codeModal = document.createElement('div');
+    codeModal.className = 'lightbox code-modal';
+    document.body.appendChild(codeModal);
+    codeModal.addEventListener('click', e => {
+      if (e.target === codeModal) closeCodeModal();
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') closeCodeModal();
+    });
+
+    function closeCodeModal() {
+      codeModal.classList.remove('open');
+      codeModal.innerHTML = '';
+    }
+
+    async function openCodeModal(actionUrl) {
+      codeModal.innerHTML = '<div class="code-card"><div class="promo-name">Génération du code…</div></div>';
+      codeModal.classList.add('open');
+      try {
+        const resp = await fetch(actionUrl, { method: 'POST', headers: { 'X-Requested-With': 'fetch' } });
+        codeModal.innerHTML = await resp.text();
+      } catch (err) {
+        codeModal.innerHTML = '<div class="code-card"><div class="error-box">Connexion impossible — réessayez.</div></div>';
+      }
+    }
+
+    document.querySelectorAll('.tile-form').forEach(form => {
+      form.addEventListener('submit', e => {
+        e.preventDefault();
+        openCodeModal(form.action);
+      });
+    });
+
+    function legacyCopy(text, btn) {
+      // navigator.clipboard exige une connexion sécurisée (HTTPS/localhost) —
+      // absente ici (déploiement en HTTP simple sur le réseau Tailscale), donc
+      // l'API moderne échoue silencieusement. On retombe sur la méthode
+      // classique (textarea invisible + execCommand), qui marche partout.
+      const helper = document.createElement('textarea');
+      helper.value = text;
+      helper.setAttribute('readonly', '');
+      helper.style.position = 'fixed';
+      helper.style.opacity = '0';
+      document.body.appendChild(helper);
+      helper.select();
+      helper.setSelectionRange(0, text.length);
+      try {
+        document.execCommand('copy');
+        markCopied(btn);
+      } catch (err) {
+        alert('Copie impossible sur cet appareil — recopiez le code à la main : ' + text);
+      }
+      document.body.removeChild(helper);
+    }
+
+    function markCopied(btn) {
+      btn.textContent = 'Copié ✓';
+      btn.classList.add('copied');
+    }
+
+    function copyCode(btn) {
+      const card = btn.closest('.code-card');
+      const text = card.querySelector('#code-value').innerText;
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(() => markCopied(btn)).catch(() => legacyCopy(text, btn));
+      } else {
+        legacyCopy(text, btn);
+      }
+    }
   </script>
 </body>
 </html>

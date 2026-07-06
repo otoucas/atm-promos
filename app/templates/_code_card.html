@@ -1,0 +1,17 @@
+<div class="code-card">
+  {% if promotion.logo_path %}
+    <div class="visual"><img src="/media/logos/{{ promotion.logo_path }}" alt="{{ promotion.brand_name }}"></div>
+  {% elif promotion.logo_url %}
+    <div class="visual"><img src="{{ promotion.logo_url }}" alt="{{ promotion.brand_name }}" onerror="this.parentElement.style.display='none'"></div>
+  {% endif %}
+  <div class="promo-name">{{ promotion.display_name }}</div>
+  {% if code %}
+    <div class="code-value" id="code-value">{{ code }}</div>
+    <button type="button" class="copy-btn" onclick="copyCode(this)">Copier le code</button>
+  {% else %}
+    <div class="error-box">
+      Impossible de générer le code pour l'instant.<br>
+      {{ error }}
+    </div>
+  {% endif %}
+</div>

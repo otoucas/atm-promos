@@ -128,9 +128,12 @@ def generate_code(promotion_id: int, request: Request, db: Session = Depends(get
         db.add(GeneratedCode(promotion_id=promo.id, code=code))
         db.commit()
 
-    return templates.TemplateResponse(
-        "code_display.html", {"request": request, "promotion": promo, "code": code, "error": error}
-    )
+    context = {"request": request, "promotion": promo, "code": code, "error": error}
+    # La grille appelle cette route via fetch() pour afficher le code dans une
+    # pop-up sans navigation — repli sur la page complète si JS est coupé
+    # (navigation classique du <form>, sans cet en-tête).
+    template_name = "code_modal.html" if request.headers.get("X-Requested-With") == "fetch" else "code_display.html"
+    return templates.TemplateResponse(template_name, context)
 
 
 # ---------------------------------------------------------------------------

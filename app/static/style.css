@@ -442,3 +442,5 @@ h3 { font-size: 1rem; font-weight: 700; margin: 28px 0 12px; }
 }
 .lightbox.open { display: flex; }
 .lightbox img { max-width: 90vw; max-height: 90vh; border-radius: 12px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4); }
+.lightbox.code-modal { cursor: default; }
+.lightbox.code-modal .code-card { cursor: auto; margin: 0; }
