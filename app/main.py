@@ -19,6 +19,7 @@ from .auth import check_password, is_admin
 from .database import get_db, init_db
 from .gmail_poller import poll_gmail_once
 from .jobs import run_auto_archive, run_daily_review, run_gmail_poll
+from .monthly_preview import run_monthly_preview
 from .logos import fetch_logo_url
 from .models import (
     STATUS_ACTIVE,
@@ -52,6 +53,11 @@ def on_startup():
     scheduler.add_job(run_auto_archive, "interval", minutes=config.ARCHIVE_CHECK_INTERVAL_MINUTES, id="auto_archive")
     scheduler.add_job(
         run_daily_review, CronTrigger(hour=config.DAILY_REVIEW_HOUR, minute=0), id="daily_review"
+    )
+    scheduler.add_job(
+        run_monthly_preview,
+        CronTrigger(day=config.MONTHLY_PREVIEW_DAY, hour=config.MONTHLY_PREVIEW_HOUR, minute=0),
+        id="monthly_preview",
     )
     scheduler.start()
 

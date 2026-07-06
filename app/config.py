@@ -36,3 +36,11 @@ ARCHIVE_CHECK_INTERVAL_MINUTES = int(os.environ.get("ARCHIVE_CHECK_INTERVAL_MINU
 DAILY_REVIEW_HOUR = int(os.environ.get("DAILY_REVIEW_HOUR", "6"))
 
 DISABLE_GMAIL_POLLER = os.environ.get("DISABLE_GMAIL_POLLER", "0") == "1"
+
+# Rappel mensuel (e-mail) des promotions Nifty à préparer pour le mois
+# suivant : validations en attente, campagnes qui démarrent/se terminent,
+# conflits non résolus. Vide = désactivé. Envoyé via le même compte Gmail
+# que le relevé (mot de passe d'application déjà configuré ci-dessus).
+MONTHLY_PREVIEW_RECIPIENT = os.environ.get("MONTHLY_PREVIEW_RECIPIENT", "")
+MONTHLY_PREVIEW_DAY = int(os.environ.get("MONTHLY_PREVIEW_DAY", "25"))
+MONTHLY_PREVIEW_HOUR = int(os.environ.get("MONTHLY_PREVIEW_HOUR", "7"))

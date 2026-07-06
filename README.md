@@ -94,6 +94,16 @@ HighCo (aucun appel réseau, aucun code réel généré).
 Le relevé automatique peut être désactivé (`DISABLE_GMAIL_POLLER=1`) pour
 n'utiliser que la saisie manuelle.
 
+## Rappel mensuel par e-mail
+
+Si `MONTHLY_PREVIEW_RECIPIENT` est renseigné dans `.env`, un e-mail récapitulatif
+est envoyé chaque mois (jour/heure configurables via `MONTHLY_PREVIEW_DAY` /
+`MONTHLY_PREVIEW_HOUR`) pour préparer le mois suivant : promotions en attente
+de validation, campagnes qui démarrent ou se terminent (avec le rappel du
+commentaire produit Winpharma à poser/enlever), et conflits actifs non
+résolus. Envoyé via la même boîte Gmail que le relevé — aucun identifiant
+supplémentaire nécessaire.
+
 ## Déploiement pour une autre pharmacie
 
 Ce dépôt est conçu pour être réutilisable : chaque pharmacie déploie sa propre
