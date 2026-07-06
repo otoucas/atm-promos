@@ -21,6 +21,7 @@ class Promotion(Base):
     operation_label = Column(String(200), nullable=True)  # e.g. product/operation name, to disambiguate multi-op brands
     highco_reference = Column(Text, nullable=False)  # URL or identifier extracted from the QR code
     concerned_products = Column(Text, nullable=True)  # products/variants covered by this one QR link, e.g. multiple emails merged into it
+    product_codes = Column(Text, nullable=True)  # comma-separated Winpharma CodeProduit values, entered by hand — the join key for the future export to the LGO
     valid_from = Column(Date, nullable=True)
     valid_until = Column(Date, nullable=True)
     status = Column(String(20), nullable=False, default=STATUS_PENDING)
@@ -40,6 +41,12 @@ class Promotion(Base):
         if self.operation_label:
             return f"{self.brand_name} — {self.operation_label}"
         return self.brand_name
+
+    @property
+    def product_codes_list(self) -> list[str]:
+        if not self.product_codes:
+            return []
+        return [c.strip() for c in self.product_codes.split(",") if c.strip()]
 
     @property
     def is_complete(self) -> bool:

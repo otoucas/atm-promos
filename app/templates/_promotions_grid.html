@@ -1,0 +1,82 @@
+<div class="toolbar">
+  <div class="search-wrap">
+    <input type="search" id="promo-search" class="search-box" placeholder="Rechercher une marque…" aria-label="Rechercher une marque" autocomplete="off">
+  </div>
+  <div class="zoom-controls">
+    <button type="button" onclick="adjustZoom(-20)" aria-label="Réduire">−</button>
+    <button type="button" onclick="adjustZoom(20)" aria-label="Agrandir">+</button>
+  </div>
+</div>
+
+{% if promotions %}
+<div class="grid" id="grid">
+  {% for promo in promotions %}
+  <form class="tile-form" method="post" action="/generate/{{ promo.id }}" data-brand="{{ promo.display_name|lower }}">
+    <button type="submit" class="tile{% if promo.id in conflict_ids %} conflict{% endif %}" title="{% if promo.id in conflict_ids %}Une autre promotion de cette marque a une période de validité qui se chevauche — vérifier avant utilisation.{% elif promo.concerned_products %}Produits concernés : {{ promo.concerned_products }}{% endif %}">
+      {% if promo.id in conflict_ids %}<span class="conflict-badge" aria-hidden="true">⚠</span>{% endif %}
+      <span class="visual">
+        {% if promo.logo_path %}
+          <img src="/media/logos/{{ promo.logo_path }}" alt="{{ promo.brand_name }}">
+        {% elif promo.logo_url %}
+          <img src="{{ promo.logo_url }}" alt="{{ promo.brand_name }}" onerror="this.remove(); this.nextElementSibling.style.display='flex'">
+          <span class="fallback-badge" style="display:none">{{ promo.brand_name[:2]|upper }}</span>
+        {% else %}
+          <span class="fallback-badge">{{ promo.brand_name[:2]|upper }}</span>
+        {% endif %}
+      </span>
+      <span class="label">{{ promo.display_name }}</span>
+    </button>
+  </form>
+  {% endfor %}
+</div>
+<div class="empty-state" id="no-results" style="display:none">Aucune marque ne correspond à « <span id="no-results-query"></span> ».</div>
+{% else %}
+<div class="empty-state">Aucune promotion active pour le moment.</div>
+{% endif %}
+
+<script>
+  const grid = document.documentElement;
+  const stored = localStorage.getItem('tileSize');
+  if (stored) grid.style.setProperty('--tile-size', stored + 'px');
+
+  function adjustZoom(delta) {
+    const current = parseInt(getComputedStyle(grid).getPropertyValue('--tile-size')) || 180;
+    const next = Math.min(320, Math.max(110, current + delta));
+    grid.style.setProperty('--tile-size', next + 'px');
+    localStorage.setItem('tileSize', next);
+  }
+
+  // Recherche instantanée côté client — la liste est déjà chargée, pas besoin
+  // d'un aller-retour serveur pour filtrer quelques dizaines de tuiles.
+  const searchInput = document.getElementById('promo-search');
+  const tileForms = Array.from(document.querySelectorAll('.tile-form'));
+  const noResults = document.getElementById('no-results');
+  const noResultsQuery = document.getElementById('no-results-query');
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      const q = searchInput.value.trim().toLowerCase();
+      let visibleCount = 0;
+      tileForms.forEach(form => {
+        const match = !q || form.dataset.brand.includes(q);
+        form.style.display = match ? '' : 'none';
+        if (match) visibleCount += 1;
+      });
+      if (noResults) {
+        noResults.style.display = q && visibleCount === 0 ? 'block' : 'none';
+        if (noResultsQuery) noResultsQuery.textContent = searchInput.value.trim();
+      }
+    });
+  }
+
+  // L'écran reste ouvert toute la journée au comptoir : on recharge la grille
+  // périodiquement pour refléter les validations/expirations sans intervention.
+  // Repoussé tant qu'une recherche est en cours de saisie, pour ne pas couper
+  // l'opérateur en plein milieu d'une frappe devant un client.
+  let reloadTimer = setTimeout(() => location.reload(), 5 * 60 * 1000);
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      clearTimeout(reloadTimer);
+      reloadTimer = setTimeout(() => location.reload(), 5 * 60 * 1000);
+    });
+  }
+</script>

@@ -20,13 +20,41 @@
 </div>
 
 <script>
+  function markCopied() {
+    const btn = document.getElementById('copy-btn');
+    btn.textContent = 'Copié ✓';
+    btn.classList.add('copied');
+  }
+
+  function legacyCopy(text) {
+    // navigator.clipboard exige une connexion sécurisée (HTTPS/localhost) —
+    // absente ici (déploiement en HTTP simple sur le réseau Tailscale), donc
+    // l'API moderne échoue silencieusement. On retombe sur la méthode
+    // classique (textarea invisible + execCommand), qui marche partout.
+    const helper = document.createElement('textarea');
+    helper.value = text;
+    helper.setAttribute('readonly', '');
+    helper.style.position = 'fixed';
+    helper.style.opacity = '0';
+    document.body.appendChild(helper);
+    helper.select();
+    helper.setSelectionRange(0, text.length);
+    try {
+      document.execCommand('copy');
+      markCopied();
+    } catch (err) {
+      alert('Copie impossible sur cet appareil — recopiez le code à la main : ' + text);
+    }
+    document.body.removeChild(helper);
+  }
+
   function copyCode() {
     const text = document.getElementById('code-value').innerText;
-    navigator.clipboard.writeText(text).then(() => {
-      const btn = document.getElementById('copy-btn');
-      btn.textContent = 'Copié ✓';
-      btn.classList.add('copied');
-    });
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(markCopied).catch(() => legacyCopy(text));
+    } else {
+      legacyCopy(text);
+    }
   }
 </script>
 {% endblock %}

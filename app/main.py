@@ -1,4 +1,6 @@
+import csv
 import datetime
+import io
 import logging
 import uuid
 from pathlib import Path
@@ -6,7 +8,7 @@ from pathlib import Path
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
@@ -69,8 +71,7 @@ def _require_admin(request: Request):
 # ---------------------------------------------------------------------------
 
 
-@app.get("/", response_class=HTMLResponse)
-def operator_grid(request: Request, db: Session = Depends(get_db)):
+def _active_promotions(db: Session):
     today = datetime.date.today()
     promotions = (
         db.query(Promotion)
@@ -82,9 +83,31 @@ def operator_grid(request: Request, db: Session = Depends(get_db)):
         .order_by(Promotion.brand_name)
         .all()
     )
-    conflict_ids = find_conflicting_ids(promotions)
+    return promotions, find_conflicting_ids(promotions)
+
+
+@app.get("/", response_class=HTMLResponse)
+def operator_grid(request: Request, db: Session = Depends(get_db)):
+    promotions, conflict_ids = _active_promotions(db)
     return templates.TemplateResponse(
         "operator_grid.html", {"request": request, "promotions": promotions, "conflict_ids": conflict_ids}
+    )
+
+
+# ---------------------------------------------------------------------------
+# Public view — same grid, no admin link. Pré-déploiement : le conteneur
+# n'écoute que sur l'IP Tailscale (voir docker-compose.yml / BIND_ADDRESS),
+# donc cette page n'est pas réellement exposée sur Internet pour l'instant
+# malgré l'absence de lien vers /admin/*. Voir page Docmost "ATM Nifty —
+# Prompt de reprise" pour les prérequis avant une vraie ouverture publique.
+# ---------------------------------------------------------------------------
+
+
+@app.get("/promotions", response_class=HTMLResponse)
+def public_grid(request: Request, db: Session = Depends(get_db)):
+    promotions, conflict_ids = _active_promotions(db)
+    return templates.TemplateResponse(
+        "public_grid.html", {"request": request, "promotions": promotions, "conflict_ids": conflict_ids}
     )
 
 
@@ -281,6 +304,22 @@ async def admin_replace_logo(promotion_id: int, request: Request, db: Session = 
     return RedirectResponse("/admin/promotions", status_code=303)
 
 
+@app.post("/admin/promotions/{promotion_id}/product-codes")
+async def admin_set_product_codes(promotion_id: int, request: Request, db: Session = Depends(get_db)):
+    """Lets the pharmacist attach the Winpharma product code(s) (CodeProduit)
+    that a promotion actually covers — the join key the future Winpharma
+    export relies on, since concerned_products is only a free-text label
+    mined from the promo email and can't be matched automatically."""
+    _require_admin(request)
+    form = await request.form()
+    promo = db.get(Promotion, promotion_id)
+    if not promo:
+        raise HTTPException(status_code=404)
+    promo.product_codes = (form.get("product_codes") or "").strip() or None
+    db.commit()
+    return RedirectResponse("/admin/promotions", status_code=303)
+
+
 @app.get("/admin/promotions/new", response_class=HTMLResponse)
 def admin_new_promotion_form(request: Request):
     _require_admin(request)
@@ -344,4 +383,50 @@ def admin_poll_now(request: Request, db: Session = Depends(get_db)):
     return RedirectResponse(
         f"/admin/pending?flash={created} nouvelle(s) promotion(s), {merged} fusionnée(s) avec une promotion existante",
         status_code=303,
+    )
+
+
+@app.get("/admin/export/promotions.csv")
+def admin_export_promotions_csv(request: Request, db: Session = Depends(get_db)):
+    """Structured hand-off point for the future Winpharma sync: one row per
+    currently-active, currently-in-window promotion, with the Winpharma
+    product codes attached by hand (see product-codes route above). Until an
+    automated writer exists, this is also directly usable by a human at the
+    till to key promotions into WinPromo."""
+    _require_admin(request)
+    today = datetime.date.today()
+    promotions = (
+        db.query(Promotion)
+        .filter(
+            Promotion.status == STATUS_ACTIVE,
+            (Promotion.valid_until.is_(None)) | (Promotion.valid_until >= today),
+            (Promotion.valid_from.is_(None)) | (Promotion.valid_from <= today),
+        )
+        .order_by(Promotion.brand_name)
+        .all()
+    )
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, delimiter=";")
+    writer.writerow(
+        ["marque", "operation", "produits_concernes", "codes_produits_winpharma", "valide_du", "valide_au", "reference_highco"]
+    )
+    for promo in promotions:
+        writer.writerow(
+            [
+                promo.brand_name,
+                promo.operation_label or "",
+                promo.concerned_products or "",
+                ", ".join(promo.product_codes_list),
+                promo.valid_from.isoformat() if promo.valid_from else "",
+                promo.valid_until.isoformat() if promo.valid_until else "",
+                promo.highco_reference,
+            ]
+        )
+    buffer.seek(0)
+    filename = f"promotions_winpharma_{today.isoformat()}.csv"
+    return StreamingResponse(
+        buffer,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
