@@ -15,7 +15,7 @@ import logging
 import httpx
 
 from . import config
-from .models import STATUS_ACTIVE, STATUS_ARCHIVED, Promotion
+from .models import STATUS_ACTIVE, STATUS_ARCHIVED, STATUS_PENDING, Promotion
 
 logger = logging.getLogger("erpnext_sync")
 
@@ -84,7 +84,7 @@ def sync_all(db) -> tuple[int, int]:
         return (0, 0)
     promos = (
         db.query(Promotion)
-        .filter(Promotion.status.in_([STATUS_ACTIVE, STATUS_ARCHIVED]))
+        .filter(Promotion.status.in_([STATUS_PENDING, STATUS_ACTIVE, STATUS_ARCHIVED]))
         .all()
     )
     pushed = failed = 0
