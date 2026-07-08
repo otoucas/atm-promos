@@ -107,3 +107,19 @@ def run_daily_review():
         logger.exception("Échec de la revue quotidienne")
     finally:
         db.close()
+
+
+def run_erpnext_sync():
+    """Pousse (upsert idempotent) les promotions actives/archivées vers le
+    module ERPNext atm_nifty. Best-effort : n'interrompt jamais le service."""
+    from .erpnext_sync import sync_all
+
+    db = SessionLocal()
+    try:
+        pushed, failed = sync_all(db)
+        if pushed or failed:
+            logger.info("Synchro ERPNext : %d poussée(s), %d échec(s)", pushed, failed)
+    except Exception:
+        logger.exception("Échec de la synchronisation ERPNext")
+    finally:
+        db.close()

@@ -44,3 +44,11 @@ DISABLE_GMAIL_POLLER = os.environ.get("DISABLE_GMAIL_POLLER", "0") == "1"
 MONTHLY_PREVIEW_RECIPIENT = os.environ.get("MONTHLY_PREVIEW_RECIPIENT", "")
 MONTHLY_PREVIEW_DAY = int(os.environ.get("MONTHLY_PREVIEW_DAY", "25"))
 MONTHLY_PREVIEW_HOUR = int(os.environ.get("MONTHLY_PREVIEW_HOUR", "7"))
+
+# --- Pont ERPNext (module atm_nifty) : pousse les promotions vers ERPNext ---
+ERPNEXT_URL = os.environ.get("ERPNEXT_URL", "")
+ERPNEXT_API_KEY = os.environ.get("ERPNEXT_API_KEY", "")
+ERPNEXT_API_SECRET = os.environ.get("ERPNEXT_API_SECRET", "")
+# Actif seulement si l'URL et les identifiants sont renseignés.
+ERPNEXT_SYNC_ENABLED = bool(ERPNEXT_URL and ERPNEXT_API_KEY and ERPNEXT_API_SECRET)
+ERPNEXT_SYNC_INTERVAL_MINUTES = int(os.environ.get("ERPNEXT_SYNC_INTERVAL_MINUTES", "10"))
