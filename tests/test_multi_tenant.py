@@ -475,6 +475,28 @@ def test_mount_prefix_from_forwarded_header_applied_to_static_and_logo_links(db)
         main.app.dependency_overrides.clear()
 
 
+def test_mount_prefix_applied_to_generate_form_action_and_login_redirects(db):
+    """Régression du 2026-07-10 : seuls /static et /media/logos étaient
+    préfixés au départ, pas les liens propres au magasin (génération de code,
+    redirection après connexion...) — servi sous atm.hellopharmacie.com/nifty/,
+    ces liens pointaient par erreur vers la racine du domaine (donc vers
+    l'ERPNext) au lieu de repasser par /nifty/."""
+    store = _make_store(db, "LYO")
+    db.add(Promotion(store_id=store.id, brand_name="Fixodent", highco_reference="ref", status=STATUS_ACTIVE))
+    db.commit()
+
+    client = _client(db)
+    try:
+        with client as c:
+            grid_resp = c.get("/LYO/", headers={"X-Forwarded-Prefix": "/nifty"})
+            assert 'action="/nifty/LYO/generate/' in grid_resp.text
+
+            login_redirect = c.get("/LYO/admin/pending", headers={"X-Forwarded-Prefix": "/nifty"}, follow_redirects=False)
+            assert login_redirect.headers["location"] == "/nifty/LYO/admin/login"
+    finally:
+        main.app.dependency_overrides.clear()
+
+
 def test_erpnext_history_never_shows_other_store_codes(db, monkeypatch):
     """Regression guard for the join in admin_history: history must stay
     scoped per store even though GeneratedCode has no store_id of its own."""

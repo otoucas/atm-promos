@@ -116,9 +116,23 @@ def _is_public_gateway(request: Request) -> bool:
 
 def _mount_prefix(request: Request) -> str:
     """Préfixe de chemin ajouté par le reverse proxy public (ex: "/nifty"),
-    à répercuter sur les liens absolus vers /static et /media/logos. Vide sur
-    un accès direct Tailscale (pas de reverse proxy entre les deux)."""
+    à répercuter sur tout lien absolu généré par l'appli (static, media, et
+    surtout tous les liens propres à un magasin — génération de code,
+    connexion, redirections après action...). Vide sur un accès direct
+    Tailscale (pas de reverse proxy entre les deux).
+
+    ⚠️ Bug corrigé le 2026-07-10 : seuls /static et /media/logos en
+    bénéficiaient au départ. Tous les liens qui pointent vers un magasin
+    (url_prefix, RedirectResponse, en-tête Location d'un 307...) DOIVENT
+    passer par _store_url_prefix ci-dessous, jamais par un simple
+    f"/{store.code}" — sinon, servi sous atm.hellopharmacie.com/nifty/, ce
+    lien pointe par erreur vers la racine du domaine (donc vers l'ERPNext)
+    au lieu de repasser par /nifty/."""
     return request.headers.get("x-forwarded-prefix", "").rstrip("/")
+
+
+def _store_url_prefix(request: Request, store: Store) -> str:
+    return f"{_mount_prefix(request)}/{store.code}"
 
 
 def get_store_by_code(request: Request, code: str, db: Session = Depends(get_db)) -> Store:
@@ -191,10 +205,10 @@ def _require_store_admin(request: Request, store: Store):
     magasin (voir _log_in_store_admin)."""
     if store.integration == INTEGRATION_ERPNEXT:
         if not is_admin(request):
-            raise HTTPException(status_code=307, headers={"Location": f"/{store.code}/admin/login"})
+            raise HTTPException(status_code=307, headers={"Location": f"{_store_url_prefix(request, store)}/admin/login"})
         return
     if not _is_store_admin_logged_in(request, store):
-        raise HTTPException(status_code=307, headers={"Location": f"/{store.code}/admin/login"})
+        raise HTTPException(status_code=307, headers={"Location": f"{_store_url_prefix(request, store)}/admin/login"})
 
 
 def _require_superadmin(request: Request):
@@ -255,7 +269,7 @@ def _grid_response(request: Request, db: Session, store: Store):
             "request": request, "mount_prefix": _mount_prefix(request),
             "promotions": promotions,
             "conflict_ids": conflict_ids,
-            "url_prefix": f"/{store.code}",
+            "url_prefix": f"{_store_url_prefix(request, store)}",
             "store": store,
         },
     )
@@ -297,7 +311,7 @@ def _generate_code_response(promotion_id: int, request: Request, db: Session, st
         db.add(GeneratedCode(promotion_id=promo.id, code=code))
         db.commit()
 
-    context = {"request": request, "mount_prefix": _mount_prefix(request), "promotion": promo, "code": code, "error": error, "url_prefix": f"/{store.code}"}
+    context = {"request": request, "mount_prefix": _mount_prefix(request), "promotion": promo, "code": code, "error": error, "url_prefix": f"{_store_url_prefix(request, store)}"}
     # La grille appelle cette route via fetch() pour afficher le code dans une
     # pop-up sans navigation — repli sur la page complète si JS est coupé
     # (navigation classique du <form>, sans cet en-tête).
@@ -334,7 +348,7 @@ def _admin_login_form_response(request: Request, store: Store, error: str | None
             "request": request,
             "mount_prefix": _mount_prefix(request),
             "error": error,
-            "url_prefix": f"/{store.code}",
+            "url_prefix": f"{_store_url_prefix(request, store)}",
             "store": store,
         },
     )
@@ -356,14 +370,14 @@ def _admin_login_response(
     if store.integration == INTEGRATION_ERPNEXT:
         if check_password(password):
             request.session["is_admin"] = True
-            return RedirectResponse(f"/{store.code}/admin/pending", status_code=303)
+            return RedirectResponse(f"{_store_url_prefix(request, store)}/admin/pending", status_code=303)
         return templates.TemplateResponse(
             "admin_login.html",
             {
                 "request": request,
                 "mount_prefix": _mount_prefix(request),
                 "error": "Mot de passe incorrect",
-                "url_prefix": f"/{store.code}",
+                "url_prefix": f"{_store_url_prefix(request, store)}",
                 "store": store,
             },
             status_code=401,
@@ -373,14 +387,14 @@ def _admin_login_response(
     valid_email = bool(store.contact_email) and email.strip().lower() == store.contact_email.lower()
     if valid_email and verify_store_password(password, store.password_hash):
         _log_in_store_admin(request, store, remember_me)
-        return RedirectResponse(f"/{store.code}/admin/pending", status_code=303)
+        return RedirectResponse(f"{_store_url_prefix(request, store)}/admin/pending", status_code=303)
     return templates.TemplateResponse(
         "admin_login.html",
         {
             "request": request,
             "mount_prefix": _mount_prefix(request),
             "error": "Email ou mot de passe incorrect",
-            "url_prefix": f"/{store.code}",
+            "url_prefix": f"{_store_url_prefix(request, store)}",
             "store": store,
         },
         status_code=401,
@@ -406,7 +420,7 @@ def admin_login_legacy(request: Request, store: Store = Depends(get_default_stor
 @app.post("/{code}/admin/logout")
 def admin_logout_for_store(request: Request, store: Store = Depends(get_store_for_admin_by_code)):
     request.session.clear()
-    return RedirectResponse(f"/{store.code}/", status_code=303)
+    return RedirectResponse(f"{_store_url_prefix(request, store)}/", status_code=303)
 
 
 @app.post("/admin/logout")
@@ -432,7 +446,7 @@ def _admin_pending_response(request: Request, db: Session, store: Store):
             "complete": complete,
             "incomplete": incomplete,
             "flash": request.query_params.get("flash"),
-            "url_prefix": f"/{store.code}",
+            "url_prefix": f"{_store_url_prefix(request, store)}",
             "store": store,
         },
     )
@@ -481,7 +495,7 @@ async def _admin_pending_validate_response(request: Request, db: Session, store:
 
     db.commit()
     return RedirectResponse(
-        f"/{store.code}/admin/pending?flash={validated_count} promotion(s) validée(s)", status_code=303
+        f"{_store_url_prefix(request, store)}/admin/pending?flash={validated_count} promotion(s) validée(s)", status_code=303
     )
 
 
@@ -517,7 +531,7 @@ async def _admin_pending_reject_reprocess_response(request: Request, db: Session
 
     db.commit()
     return RedirectResponse(
-        f"/{store.code}/admin/pending?flash={count} promotion(s) rejetée(s) — relues au prochain relevé Gmail",
+        f"{_store_url_prefix(request, store)}/admin/pending?flash={count} promotion(s) rejetée(s) — relues au prochain relevé Gmail",
         status_code=303,
     )
 
@@ -551,7 +565,7 @@ async def _admin_pending_reject_archive_response(request: Request, db: Session, 
 
     db.commit()
     return RedirectResponse(
-        f"/{store.code}/admin/pending?flash={count} promotion(s) rejetée(s) et archivée(s)", status_code=303
+        f"{_store_url_prefix(request, store)}/admin/pending?flash={count} promotion(s) rejetée(s) et archivée(s)", status_code=303
     )
 
 
@@ -575,7 +589,7 @@ def _admin_delete_promotion_response(promotion_id: int, request: Request, db: Se
     if promo:
         db.delete(promo)
         db.commit()
-    referer = request.headers.get("referer", f"/{store.code}/admin/pending")
+    referer = request.headers.get("referer", f"{_store_url_prefix(request, store)}/admin/pending")
     return RedirectResponse(referer, status_code=303)
 
 
@@ -615,7 +629,7 @@ def _admin_promotions_response(request: Request, db: Session, store: Store):
             "active": active,
             "archived": archived,
             "conflict_ids": conflict_ids,
-            "url_prefix": f"/{store.code}",
+            "url_prefix": f"{_store_url_prefix(request, store)}",
             "store": store,
         },
     )
@@ -638,7 +652,7 @@ def _admin_archive_promotion_response(promotion_id: int, request: Request, db: S
         promo.status = STATUS_ARCHIVED
         promo.archived_at = datetime.datetime.utcnow()
         db.commit()
-    return RedirectResponse(f"/{store.code}/admin/promotions", status_code=303)
+    return RedirectResponse(f"{_store_url_prefix(request, store)}/admin/promotions", status_code=303)
 
 
 @app.post("/{code}/admin/promotions/{promotion_id}/archive")
@@ -666,7 +680,7 @@ async def _admin_replace_logo_response(promotion_id: int, request: Request, db: 
     dest.write_bytes(await logo.read())
     promo.logo_path = filename
     db.commit()
-    return RedirectResponse(f"/{store.code}/admin/promotions", status_code=303)
+    return RedirectResponse(f"{_store_url_prefix(request, store)}/admin/promotions", status_code=303)
 
 
 @app.post("/{code}/admin/promotions/{promotion_id}/logo")
@@ -703,7 +717,7 @@ async def _admin_set_product_codes_response(promotion_id: int, request: Request,
         raise HTTPException(status_code=404)
     promo.product_codes = (form.get("product_codes") or "").strip() or None
     db.commit()
-    return RedirectResponse(f"/{store.code}/admin/promotions", status_code=303)
+    return RedirectResponse(f"{_store_url_prefix(request, store)}/admin/promotions", status_code=303)
 
 
 @app.post("/{code}/admin/promotions/{promotion_id}/product-codes")
@@ -723,7 +737,7 @@ async def admin_set_product_codes_legacy(
 def _admin_new_promotion_form_response(request: Request, store: Store):
     _require_store_admin(request, store)
     return templates.TemplateResponse(
-        "admin_new_promotion.html", {"request": request, "mount_prefix": _mount_prefix(request), "error": None, "url_prefix": f"/{store.code}", "store": store}
+        "admin_new_promotion.html", {"request": request, "mount_prefix": _mount_prefix(request), "error": None, "url_prefix": f"{_store_url_prefix(request, store)}", "store": store}
     )
 
 
@@ -761,7 +775,7 @@ async def _admin_new_promotion_response(
             {
                 "request": request, "mount_prefix": _mount_prefix(request),
                 "error": "Impossible de déterminer la référence HighCo (QR illisible et aucun lien fourni).",
-                "url_prefix": f"/{store.code}",
+                "url_prefix": f"{_store_url_prefix(request, store)}",
                 "store": store,
             },
             status_code=400,
@@ -783,7 +797,7 @@ async def _admin_new_promotion_response(
     )
     db.add(promo)
     db.commit()
-    return RedirectResponse(f"/{store.code}/admin/promotions", status_code=303)
+    return RedirectResponse(f"{_store_url_prefix(request, store)}/admin/promotions", status_code=303)
 
 
 @app.post("/{code}/admin/promotions/new", response_class=HTMLResponse)
@@ -832,7 +846,7 @@ def _admin_history_response(request: Request, db: Session, store: Store):
     )
     return templates.TemplateResponse(
         "admin_history.html",
-        {"request": request, "mount_prefix": _mount_prefix(request), "history": history, "url_prefix": f"/{store.code}", "store": store},
+        {"request": request, "mount_prefix": _mount_prefix(request), "history": history, "url_prefix": f"{_store_url_prefix(request, store)}", "store": store},
     )
 
 
@@ -852,7 +866,7 @@ def _admin_poll_now_response(request: Request, db: Session, store: Store):
         raise HTTPException(status_code=404, detail="Pas de relevé Gmail pour ce point de vente")
     created, merged = poll_gmail_once(db)
     return RedirectResponse(
-        f"/{store.code}/admin/pending?flash={created} nouvelle(s) promotion(s), {merged} fusionnée(s) avec une promotion existante",
+        f"{_store_url_prefix(request, store)}/admin/pending?flash={created} nouvelle(s) promotion(s), {merged} fusionnée(s) avec une promotion existante",
         status_code=303,
     )
 
@@ -1122,14 +1136,14 @@ def verify_store_email_submit(
     store.is_active = True
     db.commit()
     _log_in_store_admin(request, store, remember_me=False)
-    return RedirectResponse(f"/{store.code}/admin/pending", status_code=303)
+    return RedirectResponse(f"{_store_url_prefix(request, store)}/admin/pending", status_code=303)
 
 
 @app.get("/{code}/admin/forgot-password", response_class=HTMLResponse)
 def forgot_password_form(request: Request, store: Store = Depends(get_store_for_admin_by_code)):
     return templates.TemplateResponse(
         "forgot_password.html",
-        {"request": request, "mount_prefix": _mount_prefix(request), "url_prefix": f"/{store.code}", "sent": False},
+        {"request": request, "mount_prefix": _mount_prefix(request), "url_prefix": f"{_store_url_prefix(request, store)}", "sent": False},
     )
 
 
@@ -1144,7 +1158,7 @@ def forgot_password_submit(request: Request, db: Session = Depends(get_db), stor
         send_password_reset_email(store)
     return templates.TemplateResponse(
         "forgot_password.html",
-        {"request": request, "mount_prefix": _mount_prefix(request), "url_prefix": f"/{store.code}", "sent": True},
+        {"request": request, "mount_prefix": _mount_prefix(request), "url_prefix": f"{_store_url_prefix(request, store)}", "sent": True},
     )
 
 
@@ -1166,7 +1180,7 @@ def reset_password_form(token: str, request: Request, db: Session = Depends(get_
             "request": request,
             "mount_prefix": _mount_prefix(request),
             "store": store,
-            "action": f"/{store.code}/admin/reset-password/{token}",
+            "action": f"{_store_url_prefix(request, store)}/admin/reset-password/{token}",
             "error": None,
         },
     )
@@ -1198,7 +1212,7 @@ def reset_password_submit(
                 "request": request,
                 "mount_prefix": _mount_prefix(request),
                 "store": store,
-                "action": f"/{store.code}/admin/reset-password/{token}",
+                "action": f"{_store_url_prefix(request, store)}/admin/reset-password/{token}",
                 "error": error,
             },
             status_code=400,
@@ -1209,7 +1223,7 @@ def reset_password_submit(
     store.password_reset_requested_at = None
     db.commit()
     _log_in_store_admin(request, store, remember_me=False)
-    return RedirectResponse(f"/{store.code}/admin/pending", status_code=303)
+    return RedirectResponse(f"{_store_url_prefix(request, store)}/admin/pending", status_code=303)
 
 
 @app.post("/superadmin/stores/{store_id}/disable")
