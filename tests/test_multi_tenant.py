@@ -434,7 +434,7 @@ def test_public_gateway_root_shows_store_index(db):
         with client as c:
             resp = c.get("/", headers={"X-Nifty-Public-Gateway": "1"})
         assert resp.status_code == 200
-        assert "Pharmacie de Lyon" in resp.text
+        assert ">LYO<" in resp.text
     finally:
         main.app.dependency_overrides.clear()
 

@@ -5,7 +5,7 @@
 {% if stores %}
 <div class="store-index-grid">
   {% for row in stores %}
-  <a class="store-index-tile" href="{{ row.url_prefix }}/">{{ row.store.name }}</a>
+  <a class="store-index-tile" href="{{ row.url_prefix }}/">{{ row.store.code }}</a>
   {% endfor %}
 </div>
 {% else %}
