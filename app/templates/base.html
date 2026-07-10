@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   {% set page_label = "NIFTY by HighCo" + (" — " + store.name if store else "") + " — Promotions en cours" %}
-  <title>{% block title %}{{ page_label }}{% endblock %}</title>
+  <title>{% block title %}{{ self.header() }}{% endblock %}</title>
   <link rel="icon" type="image/png" sizes="32x32" href="{{ mount_prefix|default('') }}/static/favicon-nifty-32x32.png">
   <link rel="apple-touch-icon" href="{{ mount_prefix|default('') }}/static/favicon-nifty-192x192.png">
   <link rel="stylesheet" href="{{ mount_prefix|default('') }}/static/style.css">

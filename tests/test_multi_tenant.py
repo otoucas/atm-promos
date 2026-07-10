@@ -548,3 +548,21 @@ def test_erpnext_history_never_shows_other_store_codes(db, monkeypatch):
         assert "SECRET-CODE-FOR-OTHER-STORE" not in resp.text
     finally:
         main.app.dependency_overrides.clear()
+
+
+def test_page_title_matches_header_on_settings_pages(db):
+    """Régression du 2026-07-10 (soir) : le <title> de l'onglet restait
+    toujours "NIFTY by HighCo — {magasin} — Promotions en cours" même sur
+    les pages de réglages (connexion, MCP...), qui affichent un tout autre
+    titre en <h1> — repéré par Olivier ("la page des paramètres n'a pas
+    l'air d'être celle attendue"). Le <title> doit reprendre le même texte
+    que le <h1> affiché, page par page."""
+    store = _make_store(db, "LYO")
+    client = _client(db)
+    try:
+        with client as c:
+            login_resp = c.get("/LYO/admin/login")
+        assert "<title>Paramètres</title>" in login_resp.text
+        assert "<h1>Paramètres</h1>" in login_resp.text
+    finally:
+        main.app.dependency_overrides.clear()
