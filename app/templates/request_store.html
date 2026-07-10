@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}NIFTY by HighCo — Inscription d'un point de vente{% endblock %}
+{% block header %}Inscription d'un point de vente{% endblock %}
+{% block header_link %}{% endblock %}
+{% block content %}
+{% if done %}
+  <div class="flash">
+    Demande enregistrée. Un email de confirmation vient d'être envoyé à <strong>{{ contact_email }}</strong> —
+    cliquez sur le lien qu'il contient pour choisir votre mot de passe et activer votre page.
+  </div>
+{% else %}
+  {% if error %}<div class="error-box">{{ error }}</div>{% endif %}
+  <form class="stacked" method="post" action="/request-store">
+    <label for="name">Nom de la pharmacie</label>
+    <input type="text" id="name" name="name" required>
+
+    <label for="code">Sigle souhaité (exactement 3 lettres)</label>
+    <input type="text" id="code" name="code" maxlength="3" minlength="3" pattern="[A-Za-z]{3}" required style="text-transform:uppercase;">
+
+    <label for="contact_name">Nom du contact</label>
+    <input type="text" id="contact_name" name="contact_name" required>
+
+    <label for="email_local_part">Email du contact</label>
+    <div style="display:flex; align-items:center; gap:6px;">
+      <input type="text" id="email_local_part" name="email_local_part" required style="flex:1;" placeholder="ex: jdupont">
+      <span style="color:var(--muted); white-space:nowrap;">@{{ email_domain }}</span>
+    </div>
+
+    <button type="submit">Envoyer la demande</button>
+  </form>
+  <p style="color:var(--muted); font-size:0.85rem; margin-top:12px;">
+    Un email de confirmation vous sera envoyé à cette adresse. Votre page ne sera active qu'après avoir cliqué le lien qu'il contient et choisi un mot de passe. Une adresse ne peut ouvrir qu'un seul sigle.
+  </p>
+{% endif %}
+{% endblock %}

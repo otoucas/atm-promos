@@ -99,3 +99,10 @@ STORE_ALERT_RECIPIENT = os.environ.get("STORE_ALERT_RECIPIENT", "")
 # Base publique utilisée pour composer le lien de confirmation envoyé par email
 # (le service ne connaît pas son propre nom public, il est derrière un reverse proxy).
 PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
+
+# Anti-abus sur /request-store (formulaire d'inscription en libre-service,
+# public depuis le 2026-07-10) : chaque tentative envoie un email (confirmation
+# ou alerte de doublon) — on plafonne le nombre de créations sur une fenêtre
+# glissante, tous points de vente confondus.
+STORE_REQUEST_RATE_LIMIT_COUNT = int(os.environ.get("STORE_REQUEST_RATE_LIMIT_COUNT", "10"))
+STORE_REQUEST_RATE_LIMIT_WINDOW_MINUTES = int(os.environ.get("STORE_REQUEST_RATE_LIMIT_WINDOW_MINUTES", "60"))

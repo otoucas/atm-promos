@@ -11,4 +11,7 @@
 {% else %}
 <div class="empty-state">Aucun point de vente actif pour le moment.</div>
 {% endif %}
+<p style="text-align:center; margin-top:24px;">
+  <a href="{{ mount_prefix|default('') }}/request-store">+ Inscrire un nouveau point de vente</a>
+</p>
 {% endblock %}

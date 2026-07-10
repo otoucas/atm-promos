@@ -1026,6 +1026,55 @@ def superadmin_dashboard(request: Request, db: Session = Depends(get_db)):
     )
 
 
+def _store_requests_rate_limited(db: Session) -> bool:
+    """Anti-abus sur la création de points de vente — nécessaire depuis que
+    /request-store est public (envoie un email à chaque tentative)."""
+    window_start = datetime.datetime.utcnow() - datetime.timedelta(
+        minutes=config.STORE_REQUEST_RATE_LIMIT_WINDOW_MINUTES
+    )
+    recent_count = db.query(Store).filter(Store.created_at >= window_start).count()
+    return recent_count >= config.STORE_REQUEST_RATE_LIMIT_COUNT
+
+
+def _process_store_request(db: Session, name: str, code: str, contact_name: str, email_local_part: str):
+    """Logique commune à la création d'un point de vente, que ce soit via
+    /superadmin/stores/new (Olivier, protégé) ou /request-store (public,
+    self-service). Retourne (store_créé_ou_None, message_erreur_ou_None)."""
+    normalized = code.strip().upper()
+    local_part = email_local_part.strip().lower().split("@")[0]  # tolère qu'on colle l'adresse entière par erreur
+    contact_email = build_contact_email(local_part)
+
+    if _store_requests_rate_limited(db):
+        return None, "Trop de demandes de création récemment — réessayez dans quelques minutes."
+
+    existing_by_code = db.query(Store).filter(Store.code == normalized).first()
+    existing_by_email = db.query(Store).filter(Store.contact_email == contact_email).first()
+
+    if len(normalized) != 3 or not normalized.isalpha():
+        return None, "Le code doit comporter exactement 3 lettres."
+    if not local_part:
+        return None, "La partie locale de l'email (avant @) est obligatoire."
+    if existing_by_code:
+        send_duplicate_code_alert(normalized, existing_by_code, contact_email)
+        return None, f"Le sigle « {normalized} » est déjà utilisé ou en attente de confirmation — une alerte a été envoyée par email."
+    if existing_by_email:
+        return None, f"Cette adresse a déjà un point de vente associé (sigle {existing_by_email.code}) — un email ne peut ouvrir qu'un seul sigle."
+
+    store = Store(
+        code=normalized,
+        name=name.strip(),
+        integration=INTEGRATION_STANDALONE,
+        contact_name=contact_name.strip(),
+        contact_email=contact_email,
+        verification_token=generate_verification_token(),
+        is_active=False,  # activé au clic sur le lien de confirmation envoyé ci-dessous
+    )
+    db.add(store)
+    db.commit()
+    send_verification_email(store)
+    return store, None
+
+
 @app.get("/superadmin/stores/new", response_class=HTMLResponse)
 def superadmin_new_store_form(request: Request):
     _require_superadmin(request)
@@ -1050,23 +1099,7 @@ def superadmin_new_store(
     email_local_part: str = Form(...),
 ):
     _require_superadmin(request)
-    normalized = code.strip().upper()
-    local_part = email_local_part.strip().lower().split("@")[0]  # tolère qu'on colle l'adresse entière par erreur
-    contact_email = build_contact_email(local_part)
-
-    error = None
-    existing_by_code = db.query(Store).filter(Store.code == normalized).first()
-    existing_by_email = db.query(Store).filter(Store.contact_email == contact_email).first()
-
-    if len(normalized) != 3 or not normalized.isalpha():
-        error = "Le code doit comporter exactement 3 lettres."
-    elif not local_part:
-        error = "La partie locale de l'email (avant @) est obligatoire."
-    elif existing_by_code:
-        error = f"Le sigle « {normalized} » est déjà utilisé ou en attente de confirmation — une alerte a été envoyée par email."
-        send_duplicate_code_alert(normalized, existing_by_code, contact_email)
-    elif existing_by_email:
-        error = f"Cette adresse a déjà un point de vente associé (sigle {existing_by_email.code}) — un email ne peut ouvrir qu'un seul sigle."
+    store, error = _process_store_request(db, name, code, contact_name, email_local_part)
 
     if error:
         return templates.TemplateResponse(
@@ -1080,24 +1113,51 @@ def superadmin_new_store(
             status_code=400,
         )
 
-    store = Store(
-        code=normalized,
-        name=name.strip(),
-        integration=INTEGRATION_STANDALONE,
-        contact_name=contact_name.strip(),
-        contact_email=contact_email,
-        verification_token=generate_verification_token(),
-        is_active=False,  # activé au clic sur le lien de confirmation envoyé ci-dessous
-    )
-    db.add(store)
-    db.commit()
-    sent = send_verification_email(store)
-    flash = (
-        f"Point de vente « {store.name} » créé ({store.code}) — email de confirmation envoyé à {contact_email}."
-        if sent
-        else f"Point de vente « {store.name} » créé ({store.code}) — ⚠ l'email de confirmation n'a pas pu être envoyé, voir les logs."
-    )
+    flash = f"Point de vente « {store.name} » créé ({store.code}) — email de confirmation envoyé à {store.contact_email}."
     return RedirectResponse(f"/superadmin?flash={flash}", status_code=303)
+
+
+@app.get("/request-store", response_class=HTMLResponse)
+def request_store_form(request: Request):
+    return templates.TemplateResponse(
+        "request_store.html",
+        {
+            "request": request,
+            "mount_prefix": _mount_prefix(request),
+            "error": None,
+            "done": False,
+            "email_domain": config.STORE_CONTACT_EMAIL_DOMAIN,
+        },
+    )
+
+
+@app.post("/request-store", response_class=HTMLResponse)
+def request_store_submit(
+    request: Request,
+    db: Session = Depends(get_db),
+    name: str = Form(...),
+    code: str = Form(...),
+    contact_name: str = Form(...),
+    email_local_part: str = Form(...),
+):
+    """Inscription en libre-service d'un nouveau point de vente — public,
+    aucun mot de passe. Le garde-fou reste que le sigle n'est activé qu'après
+    confirmation du lien envoyé à une adresse @hellopharmacie.com, et qu'un
+    email ne peut ouvrir qu'un seul sigle."""
+    store, error = _process_store_request(db, name, code, contact_name, email_local_part)
+
+    return templates.TemplateResponse(
+        "request_store.html",
+        {
+            "request": request,
+            "mount_prefix": _mount_prefix(request),
+            "error": error,
+            "done": store is not None,
+            "email_domain": config.STORE_CONTACT_EMAIL_DOMAIN,
+            "contact_email": store.contact_email if store else None,
+        },
+        status_code=400 if error else 200,
+    )
 
 
 def _invalid_token_response(request: Request):

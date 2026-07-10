@@ -3,14 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}NIFTY by HighCo{% if store %} — {{ store.name }}{% endif %} — Promotions en cours{% endblock %}</title>
+  {% set page_label = "NIFTY by HighCo" + (" — " + store.name if store else "") + " — Promotions en cours" %}
+  <title>{% block title %}{{ page_label }}{% endblock %}</title>
   <link rel="icon" type="image/png" sizes="32x32" href="{{ mount_prefix|default('') }}/static/favicon-nifty-32x32.png">
   <link rel="apple-touch-icon" href="{{ mount_prefix|default('') }}/static/favicon-nifty-192x192.png">
   <link rel="stylesheet" href="{{ mount_prefix|default('') }}/static/style.css">
 </head>
 <body>
   <header class="topbar">
-    <h1>{% block header %}Promotions en cours{% endblock %}</h1>
+    <h1>{% block header %}{{ page_label }}{% endblock %}</h1>
     {% block header_link %}<a href="{{ url_prefix|default('') }}/admin/pending">Paramètres</a>{% endblock %}
   </header>
   <main>
