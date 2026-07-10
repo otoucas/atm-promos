@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 from . import config
 from .date_extraction import extract_validity_dates
 from .logos import fetch_logo_url
-from .models import STATUS_ARCHIVED, STATUS_PENDING, SOURCE_EMAIL, Promotion, ProcessedEmail
+from .models import STATUS_ARCHIVED, STATUS_PENDING, SOURCE_EMAIL, Promotion, ProcessedEmail, Store
 from .qrcode_utils import extract_best_product_image, extract_qr_payload
 
 logger = logging.getLogger("gmail_poller")
@@ -128,15 +128,21 @@ def _guess_operation_label(subject: str) -> str:
     return match.group(0).replace(" ", "") if match else ""
 
 
-def _find_mergeable_promotion(db: Session, highco_reference: str) -> "Promotion | None":
+def _find_mergeable_promotion(db: Session, highco_reference: str, store_id: int) -> "Promotion | None":
     """Multiple emails (initial send, reminders, renewals) often reuse the
     exact same QR link — that's the same operation, so it should stay a
     single tile rather than spawning a duplicate. Deliberately excludes
     archived promotions: an admin archiving one is a deliberate rejection,
-    not something a later resend should silently revive."""
+    not something a later resend should silently revive. Scoped to the store
+    the Gmail poller feeds (Artemare) — never merges into another store's
+    promotion even if the two happened to share a QR link."""
     return (
         db.query(Promotion)
-        .filter(Promotion.highco_reference == highco_reference, Promotion.status != STATUS_ARCHIVED)
+        .filter(
+            Promotion.highco_reference == highco_reference,
+            Promotion.status != STATUS_ARCHIVED,
+            Promotion.store_id == store_id,
+        )
         .first()
     )
 
@@ -192,7 +198,16 @@ def poll_gmail_once(db: Session) -> tuple:
     Returns (created, merged): new pending promotions created, and emails
     that matched an existing promotion's QR link and were merged into it
     instead of creating a duplicate.
+
+    Le relevé Gmail ne nourrit que le point de vente historique (Artemare) —
+    les autres points de vente (format dépannage) saisissent leurs promos à la
+    main, sans automatisation mail pour l'instant.
     """
+    store = db.query(Store).filter(Store.code == config.DEFAULT_STORE_CODE).first()
+    if not store:
+        logger.warning("Magasin par défaut (%s) introuvable — relevé Gmail ignoré", config.DEFAULT_STORE_CODE)
+        return 0, 0
+
     conn = _connect()
     created = 0
     merged = 0
@@ -242,13 +257,14 @@ def poll_gmail_once(db: Session) -> tuple:
                     if product_image:
                         logo_path = _save_product_image(*product_image)
 
-                existing = _find_mergeable_promotion(db, qr_payload)
+                existing = _find_mergeable_promotion(db, qr_payload, store.id)
                 if existing:
                     _merge_into_existing(existing, brand_name, valid_from, valid_until, logo_path)
                     db.flush()
                     merged += 1
                 else:
                     promo = Promotion(
+                        store_id=store.id,
                         brand_name=brand_name,
                         operation_label=operation_label or None,
                         concerned_products=brand_name,

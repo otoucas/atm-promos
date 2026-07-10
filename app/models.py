@@ -1,6 +1,6 @@
 import datetime
 
-from sqlalchemy import Column, DateTime, Date, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Date, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from .database import Base
@@ -12,11 +12,32 @@ STATUS_ARCHIVED = "archived"
 SOURCE_EMAIL = "email"
 SOURCE_MANUAL = "manual"
 
+# Un point de vente "erpnext" garde le fonctionnement historique (mot de passe
+# admin, relevé Gmail, synchro ERPNext) — un seul aujourd'hui : Artemare.
+# Un point de vente "standalone" est le format de dépannage : saisie manuelle
+# des promos, aucune authentification sur ses propres pages de réglages.
+INTEGRATION_ERPNEXT = "erpnext"
+INTEGRATION_STANDALONE = "standalone"
+
+
+class Store(Base):
+    __tablename__ = "stores"
+
+    id = Column(Integer, primary_key=True)
+    code = Column(String(3), unique=True, nullable=False, index=True)  # ex: "ART" — utilisé dans l'URL /{code}/
+    name = Column(String(200), nullable=False)
+    integration = Column(String(20), nullable=False, default=INTEGRATION_STANDALONE)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    promotions = relationship("Promotion", back_populates="store")
+
 
 class Promotion(Base):
     __tablename__ = "promotions"
 
     id = Column(Integer, primary_key=True)
+    store_id = Column(Integer, ForeignKey("stores.id"), nullable=True)
     brand_name = Column(String(200), nullable=False, default="")
     operation_label = Column(String(200), nullable=True)  # e.g. product/operation name, to disambiguate multi-op brands
     highco_reference = Column(Text, nullable=False)  # URL or identifier extracted from the QR code
@@ -34,6 +55,7 @@ class Promotion(Base):
     validated_at = Column(DateTime, nullable=True)
     archived_at = Column(DateTime, nullable=True)
 
+    store = relationship("Store", back_populates="promotions")
     generated_codes = relationship("GeneratedCode", back_populates="promotion")
 
     @property

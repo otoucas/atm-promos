@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from . import config
 from .database import SessionLocal
-from .models import STATUS_ACTIVE, STATUS_PENDING, Promotion
+from .models import STATUS_ACTIVE, STATUS_PENDING, Promotion, Store
 from .promotion_rules import find_conflicting_ids
 
 logger = logging.getLogger("monthly_preview")
@@ -42,24 +42,35 @@ def _next_month_range(today: datetime.date) -> tuple:
 
 
 def build_preview_email(db: Session, today: datetime.date = None) -> tuple:
+    """Ce rappel ne couvre que le point de vente historique (Artemare) : le
+    commentaire produit Winpharma (Ctrl+M) qu'il mentionne n'a de sens que
+    pour ce point de vente-là."""
     today = today or datetime.date.today()
     start, end = _next_month_range(today)
     mois_label = f"{_MOIS_FR[start.month]} {start.year}"
 
-    pending = db.query(Promotion).filter(Promotion.status == STATUS_PENDING).order_by(Promotion.brand_name).all()
+    store = db.query(Store).filter(Store.code == config.DEFAULT_STORE_CODE).first()
+    store_filter = (Promotion.store_id == store.id) if store else Promotion.store_id.is_(None)
+
+    pending = (
+        db.query(Promotion)
+        .filter(store_filter, Promotion.status == STATUS_PENDING)
+        .order_by(Promotion.brand_name)
+        .all()
+    )
     starting = (
         db.query(Promotion)
-        .filter(Promotion.status == STATUS_ACTIVE, Promotion.valid_from >= start, Promotion.valid_from <= end)
+        .filter(store_filter, Promotion.status == STATUS_ACTIVE, Promotion.valid_from >= start, Promotion.valid_from <= end)
         .order_by(Promotion.valid_from)
         .all()
     )
     ending = (
         db.query(Promotion)
-        .filter(Promotion.status == STATUS_ACTIVE, Promotion.valid_until >= start, Promotion.valid_until <= end)
+        .filter(store_filter, Promotion.status == STATUS_ACTIVE, Promotion.valid_until >= start, Promotion.valid_until <= end)
         .order_by(Promotion.valid_until)
         .all()
     )
-    active = db.query(Promotion).filter(Promotion.status == STATUS_ACTIVE).all()
+    active = db.query(Promotion).filter(store_filter, Promotion.status == STATUS_ACTIVE).all()
     conflict_ids = find_conflicting_ids(active)
     conflicts = [p for p in active if p.id in conflict_ids]
 

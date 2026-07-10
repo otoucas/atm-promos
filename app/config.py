@@ -54,3 +54,16 @@ ERPNEXT_SYNC_ENABLED = bool(ERPNEXT_URL and ERPNEXT_API_KEY and ERPNEXT_API_SECR
 ERPNEXT_SYNC_INTERVAL_MINUTES = int(os.environ.get("ERPNEXT_SYNC_INTERVAL_MINUTES", "10"))
 # Fréquence de relecture de l'état autoritatif depuis ERPNext (minutes).
 ERPNEXT_PULL_INTERVAL_MINUTES = int(os.environ.get("ERPNEXT_PULL_INTERVAL_MINUTES", "5"))
+
+# --- Multi-magasins ---
+# Code du point de vente historique (Pharmacie Artemare), créé automatiquement
+# au démarrage s'il n'existe pas encore. C'est le seul avec integration=erpnext.
+DEFAULT_STORE_CODE = os.environ.get("DEFAULT_STORE_CODE", "ART")
+DEFAULT_STORE_NAME = os.environ.get("DEFAULT_STORE_NAME", "Pharmacie Artemare")
+
+# Anti-abus sur la génération de code : les pages des points de vente en
+# dépannage sont accessibles sans mot de passe depuis Internet, et chaque
+# génération consomme un vrai code HighCo à usage unique. On plafonne le
+# nombre de générations par promotion sur une fenêtre glissante.
+CODE_GENERATION_RATE_LIMIT_COUNT = int(os.environ.get("CODE_GENERATION_RATE_LIMIT_COUNT", "5"))
+CODE_GENERATION_RATE_LIMIT_WINDOW_MINUTES = int(os.environ.get("CODE_GENERATION_RATE_LIMIT_WINDOW_MINUTES", "15"))

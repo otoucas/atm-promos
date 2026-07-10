@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block header %}Nouveau point de vente{% endblock %}
+{% block header_link %}<a href="/superadmin">Retour à la liste</a>{% endblock %}
+{% block content %}
+{% if error %}<div class="error-box">{{ error }}</div>{% endif %}
+
+<form class="stacked" method="post" action="/superadmin/stores/new">
+  <label for="name">Nom du point de vente</label>
+  <input type="text" id="name" name="name" required>
+
+  <label for="code">Code (exactement 3 lettres, utilisé dans l'adresse /{code}/)</label>
+  <input type="text" id="code" name="code" maxlength="3" minlength="3" pattern="[A-Za-z]{3}" required style="text-transform:uppercase;">
+
+  <button type="submit">Créer le point de vente</button>
+</form>
+<p style="color:var(--muted); font-size:0.85rem; margin-top:12px;">
+  Format « dépannage » : saisie manuelle des promotions, aucune authentification sur les pages de réglages de ce point de vente. Pas de relevé Gmail ni de synchro ERPNext.
+</p>
+{% endblock %}

@@ -11,7 +11,7 @@
 {% if promotions %}
 <div class="grid" id="grid">
   {% for promo in promotions %}
-  <form class="tile-form" method="post" action="/generate/{{ promo.id }}" data-brand="{{ promo.display_name|lower }}">
+  <form class="tile-form" method="post" action="{{ url_prefix|default('') }}/generate/{{ promo.id }}" data-brand="{{ promo.display_name|lower }}">
     <button type="submit" class="tile{% if promo.id in conflict_ids %} conflict{% endif %}" title="{% if promo.id in conflict_ids %}Une autre promotion de cette marque a une période de validité qui se chevauche — vérifier avant utilisation.{% elif promo.concerned_products %}Produits concernés : {{ promo.concerned_products }}{% endif %}">
       {% if promo.id in conflict_ids %}<span class="conflict-badge" aria-hidden="true">⚠</span>{% endif %}
       <span class="visual">

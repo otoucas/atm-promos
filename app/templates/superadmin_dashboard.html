@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block header %}Points de vente{% endblock %}
+{% block header_link %}<a href="/superadmin/stores/new">+ Nouveau point de vente</a>{% endblock %}
+{% block content %}
+{% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+
+<div class="panel">
+<table class="admin-table">
+  <thead>
+    <tr>
+      <th>Code</th>
+      <th>Nom</th>
+      <th>Intégration</th>
+      <th>Promos actives</th>
+      <th>Dernier code généré</th>
+      <th>Statut</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td><strong>{{ row.store.code }}</strong></td>
+      <td>{{ row.store.name }}</td>
+      <td>{{ 'ERPNext (Artemare)' if row.store.integration == 'erpnext' else 'Dépannage (autonome)' }}</td>
+      <td>{{ row.active_count }}</td>
+      <td>{{ row.last_activity.strftime('%d/%m/%Y %H:%M') if row.last_activity else '—' }}</td>
+      <td>{{ 'Actif' if row.store.is_active else 'Désactivé' }}</td>
+      <td style="display:flex; gap:8px; align-items:center;">
+        <a href="/{{ row.store.code }}/">Grille</a>
+        <a href="/{{ row.store.code }}/admin/pending">Réglages</a>
+        {% if row.store.integration != 'erpnext' %}
+        {% if row.store.is_active %}
+        <form method="post" action="/superadmin/stores/{{ row.store.id }}/disable" style="margin:0;">
+          <button type="submit" style="background:var(--danger);">Désactiver</button>
+        </form>
+        {% else %}
+        <form method="post" action="/superadmin/stores/{{ row.store.id }}/enable" style="margin:0;">
+          <button type="submit">Réactiver</button>
+        </form>
+        {% endif %}
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+<p style="color:var(--muted); font-size:0.85rem; margin-top:12px;">
+  Les points de vente « Dépannage » n'ont aucun mot de passe sur leurs propres pages de réglages (/{code}/admin) — demande explicite : l'équipe du point de vente doit pouvoir s'en servir seule, y compris depuis l'extérieur du réseau Tailscale. Le point de vente « ERPNext » (Artemare) garde le mot de passe et la synchro historiques.
+</p>
+{% endblock %}

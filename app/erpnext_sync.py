@@ -16,9 +16,16 @@ import logging
 import httpx
 
 from . import config
-from .models import STATUS_ACTIVE, STATUS_ARCHIVED, STATUS_PENDING, Promotion
+from .models import STATUS_ACTIVE, STATUS_ARCHIVED, STATUS_PENDING, Promotion, Store
 
 logger = logging.getLogger("erpnext_sync")
+
+
+def _erpnext_store(db) -> Store | None:
+    """Le pont ERPNext ne concerne que le point de vente historique (Artemare)
+    — les autres points de vente (format dépannage) n'y sont jamais poussés
+    ni relus depuis ERPNext."""
+    return db.query(Store).filter(Store.code == config.DEFAULT_STORE_CODE).first()
 
 _UPSERT = "/api/method/atm_nifty.api.sync.upsert_promotion"
 _LIST = "/api/method/atm_nifty.api.sync.list_promotions"
@@ -78,9 +85,15 @@ def sync_all(db) -> tuple[int, int]:
     """Ré-pousse toutes les promotions actives/archivées/en attente (upsert idempotent)."""
     if not config.ERPNEXT_SYNC_ENABLED:
         return (0, 0)
+    store = _erpnext_store(db)
+    if not store:
+        return (0, 0)
     promos = (
         db.query(Promotion)
-        .filter(Promotion.status.in_([STATUS_PENDING, STATUS_ACTIVE, STATUS_ARCHIVED]))
+        .filter(
+            Promotion.store_id == store.id,
+            Promotion.status.in_([STATUS_PENDING, STATUS_ACTIVE, STATUS_ARCHIVED]),
+        )
         .all()
     )
     pushed = failed = 0
@@ -107,6 +120,9 @@ def pull_from_erpnext(db) -> tuple[int, int, int]:
     """
     if not config.ERPNEXT_SYNC_ENABLED:
         return (0, 0, 0)
+    store = _erpnext_store(db)
+    if not store:
+        return (0, 0, 0)
     try:
         resp = httpx.get(_base() + _LIST, headers=_headers(), timeout=20.0)
         resp.raise_for_status()
@@ -124,7 +140,7 @@ def pull_from_erpnext(db) -> tuple[int, int, int]:
             erp_status = row.get("status")
 
             if sid:
-                promo = db.query(Promotion).filter(Promotion.id == sid).first()
+                promo = db.query(Promotion).filter(Promotion.id == sid, Promotion.store_id == store.id).first()
                 if not promo:
                     continue
                 changed = False
@@ -158,6 +174,7 @@ def pull_from_erpnext(db) -> tuple[int, int, int]:
                 if not row.get("highco_reference"):
                     continue
                 promo = Promotion(
+                    store_id=store.id,
                     brand_name=row.get("brand_name") or "",
                     operation_label=row.get("operation_label"),
                     highco_reference=row.get("highco_reference"),

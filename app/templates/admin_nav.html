@@ -1,7 +1,9 @@
 <nav class="admin-nav">
-  <a href="/admin/pending">En attente</a>
-  <a href="/admin/promotions">Promotions</a>
-  <a href="/admin/promotions/new">+ Ajouter manuellement</a>
-  <a href="/admin/history">Historique</a>
-  <form method="post" action="/admin/poll-now" class="spacer" style="margin:0;"><button type="submit">Relancer l'import Gmail</button></form>
+  <a href="{{ url_prefix|default('') }}/admin/pending">En attente</a>
+  <a href="{{ url_prefix|default('') }}/admin/promotions">Promotions</a>
+  <a href="{{ url_prefix|default('') }}/admin/promotions/new">+ Ajouter manuellement</a>
+  <a href="{{ url_prefix|default('') }}/admin/history">Historique</a>
+  {% if store and store.integration == 'erpnext' %}
+  <form method="post" action="{{ url_prefix }}/admin/poll-now" class="spacer" style="margin:0;"><button type="submit">Relancer l'import Gmail</button></form>
+  {% endif %}
 </nav>

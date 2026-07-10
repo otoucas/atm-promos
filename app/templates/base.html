@@ -9,7 +9,7 @@
 <body>
   <header class="topbar">
     <h1>{% block header %}Promotions en cours{% endblock %}</h1>
-    {% block header_link %}<a href="/admin/pending">Paramètres</a>{% endblock %}
+    {% block header_link %}<a href="{{ url_prefix|default('') }}/admin/pending">Paramètres</a>{% endblock %}
   </header>
   <main>
     {% block content %}{% endblock %}

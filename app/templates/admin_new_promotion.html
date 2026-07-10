@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 {% block header %}Ajouter une promotion manuellement{% endblock %}
-{% block header_link %}<a href="/">Retour à la grille</a>{% endblock %}
+{% block header_link %}<a href="{{ url_prefix|default('') }}/">Retour à la grille</a>{% endblock %}
 {% block content %}
 {% include "admin_nav.html" %}
 
 {% if error %}<div class="error-box">{{ error }}</div>{% endif %}
 
-<form class="stacked" method="post" action="/admin/promotions/new" enctype="multipart/form-data">
+<form class="stacked" method="post" action="{{ url_prefix|default('') }}/admin/promotions/new" enctype="multipart/form-data">
   <label for="brand_name">Marque</label>
   <input type="text" id="brand_name" name="brand_name" required>
 

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block header %}Historique des codes générés{% endblock %}
-{% block header_link %}<a href="/">Retour à la grille</a>{% endblock %}
+{% block header_link %}<a href="{{ url_prefix|default('') }}/">Retour à la grille</a>{% endblock %}
 {% block content %}
 {% include "admin_nav.html" %}
 

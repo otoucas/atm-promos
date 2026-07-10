@@ -1,5 +1,5 @@
 {% extends "base.html" %}
 {% block content %}
 {% include "_code_card.html" %}
-<div><a class="back-link" href="/">&larr; Retour à la grille</a></div>
+<div><a class="back-link" href="{{ url_prefix|default('') }}/">&larr; Retour à la grille</a></div>
 {% endblock %}

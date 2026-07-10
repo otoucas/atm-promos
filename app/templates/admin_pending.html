@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block header %}Promotions en attente de validation{% endblock %}
-{% block header_link %}<a href="/">Retour à la grille</a>{% endblock %}
+{% block header_link %}<a href="{{ url_prefix|default('') }}/">Retour à la grille</a>{% endblock %}
 {% block content %}
 {% include "admin_nav.html" %}
 
@@ -27,7 +27,7 @@
 {% endmacro %}
 
 {% if complete or incomplete %}
-<form method="post" action="/admin/pending/validate">
+<form method="post" action="{{ url_prefix|default('') }}/admin/pending/validate">
   <div class="panel">
   <table class="admin-table">
     <thead>
@@ -50,9 +50,9 @@
   </table>
   </div>
   <div style="margin-top:16px; display:flex; gap:10px; flex-wrap:wrap;">
-    <button type="submit" formaction="/admin/pending/validate">Valider la sélection</button>
-    <button type="submit" formaction="/admin/pending/reject-reprocess" style="background:var(--muted);">Rejeter → relire le mail</button>
-    <button type="submit" formaction="/admin/pending/reject-archive" style="background:var(--danger);">Rejeter → archiver</button>
+    <button type="submit" formaction="{{ url_prefix|default('') }}/admin/pending/validate">Valider la sélection</button>
+    <button type="submit" formaction="{{ url_prefix|default('') }}/admin/pending/reject-reprocess" style="background:var(--muted);">Rejeter → relire le mail</button>
+    <button type="submit" formaction="{{ url_prefix|default('') }}/admin/pending/reject-archive" style="background:var(--danger);">Rejeter → archiver</button>
   </div>
 </form>
 <p style="color:var(--muted); font-size:0.85rem; margin-top:12px;">

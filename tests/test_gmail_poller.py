@@ -6,7 +6,7 @@ from app.gmail_poller import (
     _guess_operation_label,
     _merge_into_existing,
 )
-from app.models import STATUS_ACTIVE, STATUS_ARCHIVED, STATUS_PENDING, Promotion
+from app.models import STATUS_ACTIVE, STATUS_ARCHIVED, STATUS_PENDING, Promotion, Store
 
 
 def test_guess_brand_name_from_typical_subject():
@@ -37,29 +37,50 @@ def test_guess_operation_label_no_amount():
     assert _guess_operation_label("PROMO [NIFTY] MARQUE sans montant") == ""
 
 
+def _make_store(db, code="ART"):
+    store = Store(code=code, name="Pharmacie test", integration="erpnext")
+    db.add(store)
+    db.flush()
+    return store
+
+
 def test_find_mergeable_promotion_matches_same_reference(db):
-    existing = Promotion(brand_name="Fixodent", highco_reference="same-link", status=STATUS_PENDING)
+    store = _make_store(db)
+    existing = Promotion(store_id=store.id, brand_name="Fixodent", highco_reference="same-link", status=STATUS_PENDING)
     db.add(existing)
     db.flush()
 
-    found = _find_mergeable_promotion(db, "same-link")
+    found = _find_mergeable_promotion(db, "same-link", store.id)
     assert found is not None
     assert found.id == existing.id
 
 
 def test_find_mergeable_promotion_ignores_archived(db):
-    archived = Promotion(brand_name="Fixodent", highco_reference="same-link", status=STATUS_ARCHIVED)
+    store = _make_store(db)
+    archived = Promotion(store_id=store.id, brand_name="Fixodent", highco_reference="same-link", status=STATUS_ARCHIVED)
     db.add(archived)
     db.flush()
 
-    assert _find_mergeable_promotion(db, "same-link") is None
+    assert _find_mergeable_promotion(db, "same-link", store.id) is None
 
 
 def test_find_mergeable_promotion_no_match_for_unknown_reference(db):
-    db.add(Promotion(brand_name="Fixodent", highco_reference="some-link", status=STATUS_ACTIVE))
+    store = _make_store(db)
+    db.add(Promotion(store_id=store.id, brand_name="Fixodent", highco_reference="some-link", status=STATUS_ACTIVE))
     db.flush()
 
-    assert _find_mergeable_promotion(db, "other-link") is None
+    assert _find_mergeable_promotion(db, "other-link", store.id) is None
+
+
+def test_find_mergeable_promotion_does_not_cross_stores(db):
+    """Two different stores could theoretically receive the same HighCo QR
+    link — they must never be merged into a single tile."""
+    store_a = _make_store(db, "ART")
+    store_b = _make_store(db, "LYO")
+    db.add(Promotion(store_id=store_a.id, brand_name="Fixodent", highco_reference="same-link", status=STATUS_ACTIVE))
+    db.flush()
+
+    assert _find_mergeable_promotion(db, "same-link", store_b.id) is None
 
 
 def test_merge_into_existing_appends_new_product():
