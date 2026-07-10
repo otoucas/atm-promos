@@ -17,6 +17,7 @@ import logging
 import os
 
 from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from app.database import SessionLocal
 from app.models import (
@@ -33,6 +34,20 @@ from app.models import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("mcp_server")
 
+
+def _allowed_hosts() -> list[str]:
+    """En-têtes Host acceptés, en plus de localhost/127.0.0.1 (toujours
+    autorisés, utiles pour les vérifications internes/Docker healthcheck).
+
+    À renseigner via MCP_ALLOWED_HOSTS (liste séparée par des virgules) avec
+    les noms/IP réellement utilisés pour joindre ce serveur en prod (IP
+    Tailscale:port de l'accès direct, domaine public derrière nginx...).
+    """
+    raw = os.environ.get("MCP_ALLOWED_HOSTS", "")
+    extra = [h.strip() for h in raw.split(",") if h.strip()]
+    return extra + ["127.0.0.1:*", "localhost:*", "[::1]:*"]
+
+
 mcp = FastMCP(
     "ATM Nifty",
     instructions=(
@@ -43,6 +58,14 @@ mcp = FastMCP(
     stateless_http=True,
     json_response=True,
     streamable_http_path="/",
+    # Protection anti DNS-rebinding du SDK : gardée active, mais avec une
+    # liste blanche explicite des Host attendus (voir MCP_ALLOWED_HOSTS) —
+    # par défaut le SDK ne whitelist que 127.0.0.1/localhost, ce qui
+    # rejetterait (421) tout accès via l'IP Tailscale ou le domaine public.
+    transport_security=TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=_allowed_hosts(),
+    ),
 )
 
 
