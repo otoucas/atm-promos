@@ -17,16 +17,35 @@ def get_db():
         db.close()
 
 
-def _ensure_store_id_column():
-    """Base.metadata.create_all() ne modifie jamais une table déjà existante
-    — sur une base de prod créée avant l'introduction du multi-magasins, la
-    table promotions n'a pas encore la colonne store_id. On l'ajoute à la main
-    si besoin, comme pour les précédents changements de schéma de ce projet
-    (pas de framework de migration ici)."""
+def _ensure_columns(table: str, column_defs: dict):
+    """Base.metadata.create_all() ne modifie jamais une table déjà existante —
+    sur une base de prod créée avant l'ajout d'une colonne, elle manquerait.
+    On l'ajoute à la main si besoin, comme pour les précédents changements de
+    schéma de ce projet (pas de framework de migration ici). column_defs :
+    {nom_colonne: fragment SQL de définition (type + contraintes)}."""
     with engine.begin() as conn:
-        cols = [row[1] for row in conn.exec_driver_sql("PRAGMA table_info(promotions)").fetchall()]
-        if cols and "store_id" not in cols:
-            conn.exec_driver_sql("ALTER TABLE promotions ADD COLUMN store_id INTEGER REFERENCES stores(id)")
+        cols = [row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table})").fetchall()]
+        if not cols:
+            return  # table pas encore créée (base toute neuve) — create_all() s'en charge
+        for name, definition in column_defs.items():
+            if name not in cols:
+                conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+
+
+def _ensure_store_id_column():
+    _ensure_columns("promotions", {"store_id": "INTEGER REFERENCES stores(id)"})
+
+
+def _ensure_store_contact_columns():
+    _ensure_columns(
+        "stores",
+        {
+            "contact_name": "VARCHAR(200)",
+            "contact_email": "VARCHAR(255)",
+            "verification_token": "VARCHAR(64)",
+            "email_verified_at": "DATETIME",
+        },
+    )
 
 
 def _ensure_default_store_and_backfill():
@@ -55,4 +74,5 @@ def init_db():
 
     Base.metadata.create_all(bind=engine)
     _ensure_store_id_column()
+    _ensure_store_contact_columns()
     _ensure_default_store_and_backfill()

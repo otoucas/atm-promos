@@ -35,6 +35,7 @@ from .models import (
 )
 from .promotion_rules import find_conflicting_ids
 from .qrcode_utils import extract_qr_payload
+from .store_requests import build_contact_email, generate_verification_token, send_duplicate_code_alert, send_verification_email
 
 logging.basicConfig(level=logging.INFO)
 
@@ -906,7 +907,15 @@ def superadmin_dashboard(request: Request, db: Session = Depends(get_db)):
 @app.get("/superadmin/stores/new", response_class=HTMLResponse)
 def superadmin_new_store_form(request: Request):
     _require_superadmin(request)
-    return templates.TemplateResponse("superadmin_new_store.html", {"request": request, "mount_prefix": _mount_prefix(request), "error": None})
+    return templates.TemplateResponse(
+        "superadmin_new_store.html",
+        {
+            "request": request,
+            "mount_prefix": _mount_prefix(request),
+            "error": None,
+            "email_domain": config.STORE_CONTACT_EMAIL_DOMAIN,
+        },
+    )
 
 
 @app.post("/superadmin/stores/new", response_class=HTMLResponse)
@@ -915,25 +924,76 @@ def superadmin_new_store(
     db: Session = Depends(get_db),
     name: str = Form(...),
     code: str = Form(...),
+    contact_name: str = Form(...),
+    email_local_part: str = Form(...),
 ):
     _require_superadmin(request)
     normalized = code.strip().upper()
+    local_part = email_local_part.strip().lower().split("@")[0]  # tolère qu'on colle l'adresse entière par erreur
+    contact_email = build_contact_email(local_part)
 
     error = None
+    existing_by_code = db.query(Store).filter(Store.code == normalized).first()
+    existing_by_email = db.query(Store).filter(Store.contact_email == contact_email).first()
+
     if len(normalized) != 3 or not normalized.isalpha():
         error = "Le code doit comporter exactement 3 lettres."
-    elif db.query(Store).filter(Store.code == normalized).first():
-        error = f"Le code « {normalized} » est déjà utilisé."
+    elif not local_part:
+        error = "La partie locale de l'email (avant @) est obligatoire."
+    elif existing_by_code:
+        error = f"Le sigle « {normalized} » est déjà utilisé ou en attente de confirmation — une alerte a été envoyée par email."
+        send_duplicate_code_alert(normalized, existing_by_code, contact_email)
+    elif existing_by_email:
+        error = f"Cette adresse a déjà un point de vente associé (sigle {existing_by_email.code}) — un email ne peut ouvrir qu'un seul sigle."
 
     if error:
         return templates.TemplateResponse(
-            "superadmin_new_store.html", {"request": request, "mount_prefix": _mount_prefix(request), "error": error}, status_code=400
+            "superadmin_new_store.html",
+            {
+                "request": request,
+                "mount_prefix": _mount_prefix(request),
+                "error": error,
+                "email_domain": config.STORE_CONTACT_EMAIL_DOMAIN,
+            },
+            status_code=400,
         )
 
-    store = Store(code=normalized, name=name.strip(), integration=INTEGRATION_STANDALONE)
+    store = Store(
+        code=normalized,
+        name=name.strip(),
+        integration=INTEGRATION_STANDALONE,
+        contact_name=contact_name.strip(),
+        contact_email=contact_email,
+        verification_token=generate_verification_token(),
+        is_active=False,  # activé au clic sur le lien de confirmation envoyé ci-dessous
+    )
     db.add(store)
     db.commit()
-    return RedirectResponse(f"/superadmin?flash=Point de vente « {store.name} » créé ({store.code})", status_code=303)
+    sent = send_verification_email(store)
+    flash = (
+        f"Point de vente « {store.name} » créé ({store.code}) — email de confirmation envoyé à {contact_email}."
+        if sent
+        else f"Point de vente « {store.name} » créé ({store.code}) — ⚠ l'email de confirmation n'a pas pu être envoyé, voir les logs."
+    )
+    return RedirectResponse(f"/superadmin?flash={flash}", status_code=303)
+
+
+@app.get("/verify/{token}", response_class=HTMLResponse)
+def verify_store_email(token: str, request: Request, db: Session = Depends(get_db)):
+    store = db.query(Store).filter(Store.verification_token == token).first()
+    if not store or store.email_verified_at:
+        return templates.TemplateResponse(
+            "verify_result.html",
+            {"request": request, "mount_prefix": _mount_prefix(request), "ok": False, "store": None},
+            status_code=404,
+        )
+    store.email_verified_at = datetime.datetime.utcnow()
+    store.is_active = True
+    db.commit()
+    return templates.TemplateResponse(
+        "verify_result.html",
+        {"request": request, "mount_prefix": _mount_prefix(request), "ok": True, "store": store},
+    )
 
 
 @app.post("/superadmin/stores/{store_id}/disable")

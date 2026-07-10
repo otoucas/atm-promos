@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block header %}{% if ok %}Point de vente activé{% else %}Lien invalide{% endif %}{% endblock %}
+{% block header_link %}{% endblock %}
+{% block content %}
+{% if ok %}
+  <div class="flash">
+    Le point de vente « {{ store.name }} » ({{ store.code }}) est maintenant actif.
+    Vous pouvez accéder à sa page à l'adresse <strong>{{ mount_prefix|default('') }}/{{ store.code }}/</strong>.
+  </div>
+{% else %}
+  <div class="error-box">
+    Ce lien de confirmation est invalide ou a déjà été utilisé. Contactez la pharmacie Artemare si vous pensez qu'il s'agit d'une erreur.
+  </div>
+{% endif %}
+{% endblock %}

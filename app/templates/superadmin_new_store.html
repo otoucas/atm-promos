@@ -8,12 +8,21 @@
   <label for="name">Nom du point de vente</label>
   <input type="text" id="name" name="name" required>
 
-  <label for="code">Code (exactement 3 lettres, utilisé dans l'adresse /{code}/)</label>
+  <label for="code">Sigle (exactement 3 lettres, utilisé dans l'adresse /{code}/)</label>
   <input type="text" id="code" name="code" maxlength="3" minlength="3" pattern="[A-Za-z]{3}" required style="text-transform:uppercase;">
+
+  <label for="contact_name">Nom du contact (renseigné dans la demande)</label>
+  <input type="text" id="contact_name" name="contact_name" required>
+
+  <label for="email_local_part">Email du contact</label>
+  <div style="display:flex; align-items:center; gap:6px;">
+    <input type="text" id="email_local_part" name="email_local_part" required style="flex:1;" placeholder="ex: jdupont">
+    <span style="color:var(--muted); white-space:nowrap;">@{{ email_domain }}</span>
+  </div>
 
   <button type="submit">Créer le point de vente</button>
 </form>
 <p style="color:var(--muted); font-size:0.85rem; margin-top:12px;">
-  Format « dépannage » : saisie manuelle des promotions, aucune authentification sur les pages de réglages de ce point de vente. Pas de relevé Gmail ni de synchro ERPNext.
+  Format « dépannage » : saisie manuelle des promotions, aucune authentification sur les pages de réglages de ce point de vente. Pas de relevé Gmail ni de synchro ERPNext. Le sigle reste inactif tant que le contact n'a pas cliqué le lien de confirmation reçu par email. Un email ne peut être associé qu'à un seul sigle.
 </p>
 {% endblock %}

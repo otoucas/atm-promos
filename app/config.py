@@ -67,3 +67,13 @@ DEFAULT_STORE_NAME = os.environ.get("DEFAULT_STORE_NAME", "Pharmacie Artemare")
 # nombre de générations par promotion sur une fenêtre glissante.
 CODE_GENERATION_RATE_LIMIT_COUNT = int(os.environ.get("CODE_GENERATION_RATE_LIMIT_COUNT", "5"))
 CODE_GENERATION_RATE_LIMIT_WINDOW_MINUTES = int(os.environ.get("CODE_GENERATION_RATE_LIMIT_WINDOW_MINUTES", "15"))
+
+# --- Demande d'ouverture d'un point de vente (formulaire /superadmin/stores/new) ---
+# Domaine imposé pour l'email de contact — seule la partie locale (avant @)
+# est saisie dans le formulaire, ce suffixe est ajouté automatiquement.
+STORE_CONTACT_EMAIL_DOMAIN = os.environ.get("STORE_CONTACT_EMAIL_DOMAIN", "hellopharmacie.com")
+# Adresse qui reçoit les alertes (ex: un sigle déjà pris/en attente est redemandé).
+STORE_ALERT_RECIPIENT = os.environ.get("STORE_ALERT_RECIPIENT", "")
+# Base publique utilisée pour composer le lien de confirmation envoyé par email
+# (le service ne connaît pas son propre nom public, il est derrière un reverse proxy).
+PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")

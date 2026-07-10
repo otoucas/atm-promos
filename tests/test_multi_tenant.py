@@ -154,31 +154,103 @@ def test_superadmin_dashboard_requires_login(db):
         main.app.dependency_overrides.clear()
 
 
-def test_superadmin_can_create_store(db):
+def _new_store_form(name, code, contact_name="Jean Dupont", email_local_part="jdupont"):
+    return {"name": name, "code": code, "contact_name": contact_name, "email_local_part": email_local_part}
+
+
+def test_superadmin_can_create_store(db, monkeypatch):
+    sent = []
+    monkeypatch.setattr(main, "send_verification_email", lambda store: sent.append(store.code) or True)
     client = _client(db)
     try:
         with client as c:
             c.post("/superadmin/login", data={"password": config.ADMIN_PASSWORD})
-            resp = c.post("/superadmin/stores/new", data={"name": "Pharmacie de Lyon", "code": "lyo"}, follow_redirects=False)
+            resp = c.post(
+                "/superadmin/stores/new",
+                data=_new_store_form("Pharmacie de Lyon", "lyo", email_local_part="jdupont"),
+                follow_redirects=False,
+            )
         assert resp.status_code == 303
         store = db.query(Store).filter(Store.code == "LYO").first()
         assert store is not None
         assert store.name == "Pharmacie de Lyon"
         assert store.integration == INTEGRATION_STANDALONE
+        assert store.contact_email == f"jdupont@{config.STORE_CONTACT_EMAIL_DOMAIN}"
+        assert store.contact_name == "Jean Dupont"
+        # Inactif tant que le lien de confirmation n'a pas été cliqué.
+        assert store.is_active is False
+        assert store.verification_token
+        assert sent == ["LYO"]
     finally:
         main.app.dependency_overrides.clear()
 
 
-def test_superadmin_rejects_duplicate_code(db):
-    _make_store(db, "LYO")
-    db.commit()
+def test_new_store_grid_unreachable_until_email_verified(db, monkeypatch):
+    monkeypatch.setattr(main, "send_verification_email", lambda store: True)
     client = _client(db)
     try:
         with client as c:
             c.post("/superadmin/login", data={"password": config.ADMIN_PASSWORD})
-            resp = c.post("/superadmin/stores/new", data={"name": "Doublon", "code": "LYO"})
+            c.post("/superadmin/stores/new", data=_new_store_form("Pharmacie de Lyon", "LYO"))
+            resp = c.get("/LYO/")
+        assert resp.status_code == 404
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_verify_link_activates_store(db, monkeypatch):
+    monkeypatch.setattr(main, "send_verification_email", lambda store: True)
+    client = _client(db)
+    try:
+        with client as c:
+            c.post("/superadmin/login", data={"password": config.ADMIN_PASSWORD})
+            c.post("/superadmin/stores/new", data=_new_store_form("Pharmacie de Lyon", "LYO"))
+            store = db.query(Store).filter(Store.code == "LYO").first()
+            resp = c.get(f"/verify/{store.verification_token}")
+            assert resp.status_code == 200
+            grid_resp = c.get("/LYO/")
+        db.refresh(store)
+        assert store.is_active is True
+        assert store.email_verified_at is not None
+        assert grid_resp.status_code == 200
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_verify_link_rejects_unknown_or_reused_token(db, monkeypatch):
+    monkeypatch.setattr(main, "send_verification_email", lambda store: True)
+    client = _client(db)
+    try:
+        with client as c:
+            resp = c.get("/verify/does-not-exist")
+            assert resp.status_code == 404
+
+            c.post("/superadmin/login", data={"password": config.ADMIN_PASSWORD})
+            c.post("/superadmin/stores/new", data=_new_store_form("Pharmacie de Lyon", "LYO"))
+            store = db.query(Store).filter(Store.code == "LYO").first()
+            token = store.verification_token
+            c.get(f"/verify/{token}")
+            reuse_resp = c.get(f"/verify/{token}")
+        assert reuse_resp.status_code == 404
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_superadmin_rejects_duplicate_code_and_sends_alert(db, monkeypatch):
+    alerts = []
+    monkeypatch.setattr(main, "send_verification_email", lambda store: True)
+    monkeypatch.setattr(
+        main, "send_duplicate_code_alert", lambda code, existing, email: alerts.append((code, email)) or True
+    )
+    _make_store(db, "LYO")
+    client = _client(db)
+    try:
+        with client as c:
+            c.post("/superadmin/login", data={"password": config.ADMIN_PASSWORD})
+            resp = c.post("/superadmin/stores/new", data=_new_store_form("Doublon", "LYO", email_local_part="autre"))
         assert resp.status_code == 400
         assert "déjà utilisé" in resp.text
+        assert alerts == [("LYO", f"autre@{config.STORE_CONTACT_EMAIL_DOMAIN}")]
     finally:
         main.app.dependency_overrides.clear()
 
@@ -188,9 +260,24 @@ def test_superadmin_rejects_code_not_three_letters(db):
     try:
         with client as c:
             c.post("/superadmin/login", data={"password": config.ADMIN_PASSWORD})
-            resp = c.post("/superadmin/stores/new", data={"name": "Trop long", "code": "LYON"})
+            resp = c.post("/superadmin/stores/new", data=_new_store_form("Trop long", "LYON"))
         assert resp.status_code == 400
         assert "3 lettres" in resp.text
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_superadmin_rejects_same_email_for_two_stores(db, monkeypatch):
+    monkeypatch.setattr(main, "send_verification_email", lambda store: True)
+    client = _client(db)
+    try:
+        with client as c:
+            c.post("/superadmin/login", data={"password": config.ADMIN_PASSWORD})
+            c.post("/superadmin/stores/new", data=_new_store_form("Pharmacie A", "AAA", email_local_part="meme"))
+            resp = c.post("/superadmin/stores/new", data=_new_store_form("Pharmacie B", "BBB", email_local_part="meme"))
+        assert resp.status_code == 400
+        assert "un seul sigle" in resp.text
+        assert db.query(Store).filter(Store.code == "BBB").first() is None
     finally:
         main.app.dependency_overrides.clear()
 

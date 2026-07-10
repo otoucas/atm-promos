@@ -30,6 +30,17 @@ class Store(Base):
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
+    # Contact du point de vente (collecté via Google Form externe, saisi par
+    # Olivier dans /superadmin/stores/new) — l'email doit se terminer par
+    # @hellopharmacie.com, et n'est confirmé (email_verified_at renseigné,
+    # is_active mis à True) qu'après avoir cliqué le lien envoyé à sa création.
+    # Nullable : le magasin ATM (Artemare, integration=erpnext) n'a pas de
+    # contact — il n'est pas passé par ce circuit de demande.
+    contact_name = Column(String(200), nullable=True)
+    contact_email = Column(String(255), nullable=True, index=True)
+    verification_token = Column(String(64), nullable=True, unique=True, index=True)
+    email_verified_at = Column(DateTime, nullable=True)
+
     promotions = relationship("Promotion", back_populates="store")
 
 

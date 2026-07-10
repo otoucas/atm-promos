@@ -1,0 +1,85 @@
+"""Circuit de demande d'ouverture d'un point de vente : un email de contact
+(@hellopharmacie.com) est collecté à la création (via /superadmin/stores/new,
+typiquement à partir des réponses d'un formulaire externe rempli par les
+autres pharmacies du groupement), doit être confirmé par un lien avant que le
+sigle ne devienne actif, et une alerte est envoyée si un sigle déjà pris (actif
+ou en attente de confirmation) est redemandé.
+"""
+
+import logging
+import secrets
+import smtplib
+from email.mime.text import MIMEText
+
+from . import config
+
+logger = logging.getLogger("store_requests")
+
+
+def generate_verification_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def build_contact_email(local_part: str) -> str:
+    return f"{local_part.strip().lower()}@{config.STORE_CONTACT_EMAIL_DOMAIN}"
+
+
+def _send_email(subject: str, body: str, to: str) -> None:
+    if not config.GMAIL_ADDRESS or not config.GMAIL_APP_PASSWORD:
+        raise RuntimeError("GMAIL_ADDRESS / GMAIL_APP_PASSWORD non configurés")
+
+    msg = MIMEText(body, _charset="utf-8")
+    msg["Subject"] = subject
+    msg["From"] = config.GMAIL_ADDRESS
+    msg["To"] = to
+
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+        smtp.login(config.GMAIL_ADDRESS, config.GMAIL_APP_PASSWORD)
+        smtp.sendmail(config.GMAIL_ADDRESS, [to], msg.as_string())
+
+
+def send_verification_email(store) -> bool:
+    """Envoie le lien de confirmation au contact du point de vente. Best-effort :
+    le magasin reste créé (mais inactif) même si l'envoi échoue — Olivier peut
+    toujours renvoyer le lien à la main (il est journalisé ci-dessous)."""
+    link = f"{config.PUBLIC_BASE_URL}/verify/{store.verification_token}"
+    subject = f"Confirmez l'ouverture du point de vente « {store.name} » ({store.code})"
+    body = (
+        f"Bonjour{' ' + store.contact_name if store.contact_name else ''},\n\n"
+        f"Une demande d'ouverture de page Nifty a été enregistrée pour « {store.name} » "
+        f"(sigle {store.code}).\n\n"
+        f"Pour l'activer, cliquez sur ce lien :\n{link}\n\n"
+        "Si vous n'êtes pas à l'origine de cette demande, ignorez simplement cet e-mail."
+    )
+    try:
+        _send_email(subject, body, store.contact_email)
+        return True
+    except Exception:
+        logger.exception(
+            "Échec de l'envoi de l'email de confirmation pour le magasin %s (%s) — lien : %s",
+            store.code, store.contact_email, link,
+        )
+        return False
+
+
+def send_duplicate_code_alert(code: str, existing_store, requested_contact_email: str) -> bool:
+    """Le sigle demandé existe déjà (actif ou en attente de confirmation),
+    éventuellement avec un contact différent — alerte Olivier plutôt que de
+    laisser passer silencieusement."""
+    if not config.STORE_ALERT_RECIPIENT:
+        logger.warning("STORE_ALERT_RECIPIENT non configuré — alerte de sigle en doublon (%s) non envoyée", code)
+        return False
+    status = "confirmé" if existing_store.email_verified_at else "en attente de confirmation"
+    subject = f"[ATM Nifty] Sigle « {code} » redemandé"
+    body = (
+        f"Le sigle « {code} » a été redemandé (contact soumis : {requested_contact_email}).\n\n"
+        f"Il existe déjà pour « {existing_store.name} », statut {status}, "
+        f"contact enregistré : {existing_store.contact_email or '(aucun)'}.\n\n"
+        "À vérifier manuellement — la nouvelle demande n'a pas été créée."
+    )
+    try:
+        _send_email(subject, body, config.STORE_ALERT_RECIPIENT)
+        return True
+    except Exception:
+        logger.exception("Échec de l'envoi de l'alerte de sigle en doublon pour %s", code)
+        return False

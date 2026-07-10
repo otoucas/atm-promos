@@ -10,6 +10,7 @@
     <tr>
       <th>Code</th>
       <th>Nom</th>
+      <th>Contact</th>
       <th>Intégration</th>
       <th>Promos actives</th>
       <th>Dernier code généré</th>
@@ -22,10 +23,20 @@
     <tr>
       <td><strong>{{ row.store.code }}</strong></td>
       <td>{{ row.store.name }}</td>
+      <td>
+        {% if row.store.contact_email %}
+          {{ row.store.contact_name or '—' }}<br><span style="color:var(--muted); font-size:0.85em;">{{ row.store.contact_email }}</span>
+        {% else %}—{% endif %}
+      </td>
       <td>{{ 'ERPNext (Artemare)' if row.store.integration == 'erpnext' else 'Dépannage (autonome)' }}</td>
       <td>{{ row.active_count }}</td>
       <td>{{ row.last_activity.strftime('%d/%m/%Y %H:%M') if row.last_activity else '—' }}</td>
-      <td>{{ 'Actif' if row.store.is_active else 'Désactivé' }}</td>
+      <td>
+        {% if row.store.is_active %}Actif
+        {% elif row.store.contact_email and not row.store.email_verified_at %}En attente de confirmation
+        {% else %}Désactivé
+        {% endif %}
+      </td>
       <td style="display:flex; gap:8px; align-items:center;">
         <a href="/{{ row.store.code }}/">Grille</a>
         <a href="/{{ row.store.code }}/admin/pending">Réglages</a>
