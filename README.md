@@ -24,6 +24,47 @@ du réseau mobile / wifi peu fiable en magasin).
 5. Les promotions expirées sont **archivées automatiquement** (comparaison
    quotidienne avec la date de fin de validité).
 
+## Multi-magasins et exposition publique
+
+Depuis juillet 2026, un même déploiement peut servir **plusieurs points de
+vente**, chacun avec sa propre grille et son propre espace d'administration,
+sous `/{code}` (code à 3 lettres, ex. `/ATM` pour la pharmacie Artemare) :
+
+- **Pharmacie Artemare** (`ART` → renommé `ATM`) reste sur l'intégration
+  ERPNext existante (relevé Gmail, synchro `atm_nifty`). Sa grille opérateur
+  est publique (`/nifty/`), ses réglages restent protégés par mot de passe.
+- **Les autres points de vente** sont en « format dépannage » : pas de
+  relevé Gmail ni d'ERPNext, ils saisissent leurs propres promotions
+  manuellement (ou via MCP, voir plus bas) après création d'un compte
+  (email + mot de passe, avec vérification par lien et mot de passe oublié).
+- **`/hello`** — formulaire public d'auto-inscription d'un nouveau point de
+  vente (code à 3 lettres, email de contact). Un email vérifié par point de
+  vente ne peut créer qu'un seul code ; toute tentative de doublon envoie une
+  alerte au(x) superadmin(s).
+- **`/`** (racine publique) liste les points de vente actifs sous forme de
+  tuiles, par ordre alphabétique.
+- Un compte **superadmin** supervise l'ensemble des points de vente
+  (`/superadmin`).
+
+Exposition publique (ex. `https://atm.hellopharmacie.com/nifty/`) : nginx
+fait proxy vers l'appli (liée à une IP Tailscale, jamais `0.0.0.0` côté
+Internet) en réécrivant le préfixe `/nifty`, et bloque au niveau nginx
+**et** au niveau applicatif (en-tête interne `X-Nifty-Public-Gateway`) tout
+accès aux routes `/admin`, `/superadmin` depuis la passerelle publique — donc
+même une erreur de config nginx ne suffit pas à exposer l'administration.
+
+## Connexion IA par point de vente (MCP)
+
+Chaque point de vente en « format dépannage » peut connecter **sa propre IA**
+(Claude Desktop, Claude Code, ou tout client MCP) pour lire ses promotions
+en cours et en proposer de nouvelles, à partir de ses propres mails/dossiers —
+avec son propre abonnement, pas celui de l'exploitant du service. Jeton
+d'API dédié, généré dans `/{code}/admin/mcp`, avec choix entre publication
+automatique ou file d'attente à valider manuellement, et un journal
+d'activité (lectures/soumissions) consultable et supprimable par le point de
+vente. Détails techniques et raison de l'isolation en service séparé :
+[`mcp_server/README.md`](mcp_server/README.md).
+
 ## Mécanisme HighCo (vérifié le 2026-07-02)
 
 Le lien encodé dans le QR HighCo Nifty pointe vers une plateforme de

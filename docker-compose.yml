@@ -8,3 +8,18 @@ services:
     volumes:
       - ./data:/app/data
     restart: unless-stopped
+
+  # Serveur MCP — service séparé volontairement (dépendances incompatibles
+  # avec celles de l'appli web, voir mcp_server/server.py). Partage le même
+  # volume de données (même base SQLite) que le service "app" ci-dessus.
+  mcp:
+    build:
+      context: .
+      dockerfile: mcp_server/Dockerfile
+    ports:
+      - "${BIND_ADDRESS:-0.0.0.0}:${MCP_HOST_PORT:-8000}:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped

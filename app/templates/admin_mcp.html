@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block header %}Connexion IA (MCP){% endblock %}
+{% block header_link %}<a href="{{ url_prefix|default('') }}/">Retour à la grille</a>{% endblock %}
+{% block content %}
+{% include "admin_nav.html" %}
+
+{% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+
+<div class="panel" style="padding:20px; margin-bottom:20px;">
+  <h3 style="margin-top:0;">Jeton de connexion</h3>
+  <p style="color:var(--muted); font-size:0.9rem;">
+    Ce jeton permet à votre propre Claude (Claude Desktop, Claude Code...) de se connecter à ce point de vente pour lire et proposer des promotions — c'est votre IA qui fait le travail (lecture de vos emails, de vos dossiers...), pas la nôtre.
+  </p>
+  {% if store.mcp_token %}
+    <p><code style="background:var(--bg-soft); padding:6px 10px; border-radius:6px; word-break:break-all;">{{ store.mcp_token }}</code></p>
+  {% else %}
+    <p style="color:var(--muted);">Aucun jeton généré pour l'instant.</p>
+  {% endif %}
+  <form method="post" action="{{ url_prefix }}/admin/mcp/token" style="margin:0;" onsubmit="return confirm('Regénérer le jeton invalidera l\'ancien immédiatement. Continuer ?');">
+    <button type="submit">{{ 'Régénérer le jeton' if store.mcp_token else 'Générer un jeton' }}</button>
+  </form>
+</div>
+
+<div class="panel" style="padding:20px; margin-bottom:20px;">
+  <h3 style="margin-top:0;">Mode de publication</h3>
+  <form method="post" action="{{ url_prefix }}/admin/mcp/auto-publish" style="margin:0;">
+    <label style="display:flex; align-items:center; gap:8px; font-weight:normal;">
+      <input type="checkbox" name="auto_publish" value="true" style="width:auto;" onchange="this.form.requestSubmit()" {% if store.mcp_auto_publish %}checked{% endif %}>
+      Publier automatiquement les promotions soumises par mon IA (sinon, elles attendent ma validation dans « En attente »)
+    </label>
+  </form>
+</div>
+
+<div class="panel" style="padding:20px;">
+  <h3 style="margin-top:0;">Journal des lectures et soumissions</h3>
+  {% if logs %}
+  <form method="post" action="{{ url_prefix }}/admin/mcp/log/clear" style="margin-bottom:12px;" onsubmit="return confirm('Supprimer tout le journal ?');">
+    <button type="submit" style="background:var(--danger);">Vider le journal</button>
+  </form>
+  <table class="admin-table">
+    <thead><tr><th>Date/heure</th><th>Action</th><th>Détail</th><th></th></tr></thead>
+    <tbody>
+      {% for log in logs %}
+      <tr>
+        <td>{{ log.created_at.strftime('%d/%m/%Y %H:%M') }}</td>
+        <td>{{ 'Lecture des promotions' if log.action == 'list_promotions' else 'Soumission de promotion' }}</td>
+        <td>{{ log.detail or '—' }}</td>
+        <td>
+          <form method="post" action="{{ url_prefix }}/admin/mcp/log/{{ log.id }}/delete" style="margin:0;">
+            <button type="submit">Supprimer</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">Aucune activité pour l'instant.</div>
+  {% endif %}
+</div>
+{% endblock %}

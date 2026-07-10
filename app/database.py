@@ -47,6 +47,8 @@ def _ensure_store_contact_columns():
             "password_hash": "VARCHAR(255)",
             "password_reset_token": "VARCHAR(64)",
             "password_reset_requested_at": "DATETIME",
+            "mcp_token": "VARCHAR(64)",
+            "mcp_auto_publish": "BOOLEAN DEFAULT 0",
         },
     )
 

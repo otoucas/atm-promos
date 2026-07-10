@@ -11,6 +11,7 @@ STATUS_ARCHIVED = "archived"
 
 SOURCE_EMAIL = "email"
 SOURCE_MANUAL = "manual"
+SOURCE_MCP = "mcp"
 
 # Un point de vente "erpnext" garde le fonctionnement historique (mot de passe
 # admin, relevé Gmail, synchro ERPNext) — un seul aujourd'hui : Artemare.
@@ -50,7 +51,19 @@ class Store(Base):
     password_reset_token = Column(String(64), nullable=True, unique=True, index=True)
     password_reset_requested_at = Column(DateTime, nullable=True)
 
+    # Accès MCP (serveur séparé, voir mcp_server/) : le point de vente connecte
+    # son propre Claude avec ce jeton pour lire/soumettre ses promotions —
+    # "leur IA, pas la nôtre", c'est une mise à disposition gracieuse, pas un
+    # service consommant nos propres crédits API. mcp_auto_publish choisit,
+    # par magasin, si une soumission part directement active ou doit être
+    # validée manuellement (comme les mails Artemare aujourd'hui).
+    mcp_token = Column(String(64), nullable=True, unique=True, index=True)
+    mcp_auto_publish = Column(Boolean, nullable=False, default=False)
+
     promotions = relationship("Promotion", back_populates="store")
+    mcp_activity_logs = relationship(
+        "McpActivityLog", back_populates="store", cascade="all, delete-orphan"
+    )
 
 
 class Promotion(Base):
@@ -124,3 +137,23 @@ class ProcessedEmail(Base):
     id = Column(Integer, primary_key=True)
     message_id = Column(String(255), unique=True, nullable=False)
     processed_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+MCP_ACTION_LIST = "list_promotions"
+MCP_ACTION_SUBMIT = "submit_promotion"
+
+
+class McpActivityLog(Base):
+    """Journal des appels MCP (lectures/soumissions) — visible et supprimable
+    par le point de vente lui-même dans ses réglages (/{code}/admin/mcp),
+    demande explicite : chaque magasin garde la main sur ce que son IA a fait."""
+
+    __tablename__ = "mcp_activity_logs"
+
+    id = Column(Integer, primary_key=True)
+    store_id = Column(Integer, ForeignKey("stores.id"), nullable=False)
+    action = Column(String(30), nullable=False)  # MCP_ACTION_LIST | MCP_ACTION_SUBMIT
+    detail = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    store = relationship("Store", back_populates="mcp_activity_logs")

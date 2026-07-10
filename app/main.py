@@ -29,6 +29,7 @@ from .models import (
     STATUS_PENDING,
     SOURCE_MANUAL,
     GeneratedCode,
+    McpActivityLog,
     ProcessedEmail,
     Promotion,
     Store,
@@ -886,6 +887,120 @@ def admin_history_for_store(request: Request, db: Session = Depends(get_db), sto
 @app.get("/admin/history", response_class=HTMLResponse)
 def admin_history_legacy(request: Request, db: Session = Depends(get_db), store: Store = Depends(get_default_store)):
     return _admin_history_response(request, db, store)
+
+
+# ---------------------------------------------------------------------------
+# Réglages MCP par magasin — jeton pour connecter son propre Claude (serveur
+# séparé, voir mcp_server/), choix auto-publication vs file d'attente, et
+# journal des lectures/soumissions (consultable et supprimable par le magasin
+# lui-même — demande explicite).
+# ---------------------------------------------------------------------------
+
+
+def _admin_mcp_response(request: Request, db: Session, store: Store):
+    _require_store_admin(request, store)
+    logs = (
+        db.query(McpActivityLog)
+        .filter(McpActivityLog.store_id == store.id)
+        .order_by(McpActivityLog.created_at.desc())
+        .limit(200)
+        .all()
+    )
+    return templates.TemplateResponse(
+        "admin_mcp.html",
+        {
+            "request": request,
+            "mount_prefix": _mount_prefix(request),
+            "url_prefix": f"{_store_url_prefix(request, store)}",
+            "store": store,
+            "logs": logs,
+            "flash": request.query_params.get("flash"),
+        },
+    )
+
+
+@app.get("/{code}/admin/mcp", response_class=HTMLResponse)
+def admin_mcp_for_store(request: Request, db: Session = Depends(get_db), store: Store = Depends(get_store_for_admin_by_code)):
+    return _admin_mcp_response(request, db, store)
+
+
+@app.get("/admin/mcp", response_class=HTMLResponse)
+def admin_mcp_legacy(request: Request, db: Session = Depends(get_db), store: Store = Depends(get_default_store)):
+    return _admin_mcp_response(request, db, store)
+
+
+def _admin_mcp_generate_token_response(request: Request, db: Session, store: Store):
+    _require_store_admin(request, store)
+    store.mcp_token = generate_verification_token()
+    db.commit()
+    return RedirectResponse(f"{_store_url_prefix(request, store)}/admin/mcp?flash=Nouveau jeton généré.", status_code=303)
+
+
+@app.post("/{code}/admin/mcp/token")
+def admin_mcp_generate_token_for_store(request: Request, db: Session = Depends(get_db), store: Store = Depends(get_store_for_admin_by_code)):
+    return _admin_mcp_generate_token_response(request, db, store)
+
+
+@app.post("/admin/mcp/token")
+def admin_mcp_generate_token_legacy(request: Request, db: Session = Depends(get_db), store: Store = Depends(get_default_store)):
+    return _admin_mcp_generate_token_response(request, db, store)
+
+
+def _admin_mcp_auto_publish_response(request: Request, db: Session, store: Store, auto_publish: bool):
+    _require_store_admin(request, store)
+    store.mcp_auto_publish = auto_publish
+    db.commit()
+    return RedirectResponse(f"{_store_url_prefix(request, store)}/admin/mcp", status_code=303)
+
+
+@app.post("/{code}/admin/mcp/auto-publish")
+def admin_mcp_auto_publish_for_store(
+    request: Request, db: Session = Depends(get_db), store: Store = Depends(get_store_for_admin_by_code), auto_publish: bool = Form(False)
+):
+    return _admin_mcp_auto_publish_response(request, db, store, auto_publish)
+
+
+@app.post("/admin/mcp/auto-publish")
+def admin_mcp_auto_publish_legacy(
+    request: Request, db: Session = Depends(get_db), store: Store = Depends(get_default_store), auto_publish: bool = Form(False)
+):
+    return _admin_mcp_auto_publish_response(request, db, store, auto_publish)
+
+
+def _admin_mcp_delete_log_response(log_id: int, request: Request, db: Session, store: Store):
+    _require_store_admin(request, store)
+    log = db.query(McpActivityLog).filter(McpActivityLog.id == log_id, McpActivityLog.store_id == store.id).first()
+    if log:
+        db.delete(log)
+        db.commit()
+    return RedirectResponse(f"{_store_url_prefix(request, store)}/admin/mcp", status_code=303)
+
+
+@app.post("/{code}/admin/mcp/log/{log_id}/delete")
+def admin_mcp_delete_log_for_store(log_id: int, request: Request, db: Session = Depends(get_db), store: Store = Depends(get_store_for_admin_by_code)):
+    return _admin_mcp_delete_log_response(log_id, request, db, store)
+
+
+@app.post("/admin/mcp/log/{log_id}/delete")
+def admin_mcp_delete_log_legacy(log_id: int, request: Request, db: Session = Depends(get_db), store: Store = Depends(get_default_store)):
+    return _admin_mcp_delete_log_response(log_id, request, db, store)
+
+
+def _admin_mcp_clear_logs_response(request: Request, db: Session, store: Store):
+    _require_store_admin(request, store)
+    db.query(McpActivityLog).filter(McpActivityLog.store_id == store.id).delete()
+    db.commit()
+    return RedirectResponse(f"{_store_url_prefix(request, store)}/admin/mcp?flash=Journal vidé.", status_code=303)
+
+
+@app.post("/{code}/admin/mcp/log/clear")
+def admin_mcp_clear_logs_for_store(request: Request, db: Session = Depends(get_db), store: Store = Depends(get_store_for_admin_by_code)):
+    return _admin_mcp_clear_logs_response(request, db, store)
+
+
+@app.post("/admin/mcp/log/clear")
+def admin_mcp_clear_logs_legacy(request: Request, db: Session = Depends(get_db), store: Store = Depends(get_default_store)):
+    return _admin_mcp_clear_logs_response(request, db, store)
 
 
 def _admin_poll_now_response(request: Request, db: Session, store: Store):
