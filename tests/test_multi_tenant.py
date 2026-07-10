@@ -425,12 +425,44 @@ def test_public_gateway_header_blocks_erpnext_store_admin(db):
         main.app.dependency_overrides.clear()
 
 
-def test_public_gateway_header_blocks_legacy_root(db):
+def test_public_gateway_root_shows_store_index(db):
+    """Depuis le 2026-07-10 (suite), la racine publique (atm.hellopharmacie.com/nifty/)
+    affiche un index des points de vente actifs plutôt que d'être bloquée."""
+    store = _make_store(db, "LYO", name="Pharmacie de Lyon")
     client = _client(db)
     try:
         with client as c:
             resp = c.get("/", headers={"X-Nifty-Public-Gateway": "1"})
-        assert resp.status_code == 404
+        assert resp.status_code == 200
+        assert "Pharmacie de Lyon" in resp.text
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_direct_tailscale_root_still_shows_default_store_grid(db):
+    """L'accès direct (sans passerelle) garde le comportement historique :
+    "/" affiche directement la grille d'Artemare, pas l'index."""
+    client = _client(db)
+    try:
+        with client as c:
+            resp = c.get("/")
+        assert resp.status_code == 200
+        assert "store-index-grid" not in resp.text
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_code_without_trailing_slash_redirects_with_mount_prefix(db):
+    """Régression du 2026-07-10 : Starlette redirigeait automatiquement
+    "/atm" -> "/atm/" sans tenir compte du préfixe /nifty retiré par le
+    reverse proxy, renvoyant vers la racine du domaine (l'ERPNext)."""
+    store = _make_store(db, "LYO")
+    client = _client(db)
+    try:
+        with client as c:
+            resp = c.get("/LYO", headers={"X-Forwarded-Prefix": "/nifty"}, follow_redirects=False)
+        assert resp.status_code == 307
+        assert resp.headers["location"] == "/nifty/LYO/"
     finally:
         main.app.dependency_overrides.clear()
 

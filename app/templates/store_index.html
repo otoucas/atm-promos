@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block header %}Points de vente{% endblock %}
+{% block header_link %}{% endblock %}
+{% block content %}
+{% if stores %}
+<div class="store-index-grid">
+  {% for row in stores %}
+  <a class="store-index-tile" href="{{ row.url_prefix }}/">{{ row.store.name }}</a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">Aucun point de vente actif pour le moment.</div>
+{% endif %}
+{% endblock %}

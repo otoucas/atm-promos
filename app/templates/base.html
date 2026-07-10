@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Codes promo{% endblock %} — Pharmacie</title>
+  <title>{% block title %}NIFTY by HighCo{% if store %} — {{ store.name }}{% endif %} — Promotions en cours{% endblock %}</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ mount_prefix|default('') }}/static/favicon-nifty-32x32.png">
+  <link rel="apple-touch-icon" href="{{ mount_prefix|default('') }}/static/favicon-nifty-192x192.png">
   <link rel="stylesheet" href="{{ mount_prefix|default('') }}/static/style.css">
 </head>
 <body>

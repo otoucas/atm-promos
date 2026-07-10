@@ -45,7 +45,12 @@ from .store_requests import (
 
 logging.basicConfig(level=logging.INFO)
 
-app = FastAPI(title="Codes promo pharmacie")
+app = FastAPI(title="Codes promo pharmacie", redirect_slashes=False)
+# redirect_slashes désactivé : la redirection automatique de Starlette ("/atm"
+# -> "/atm/") ignore le reverse proxy public (qui retire le préfixe /nifty
+# avant de transmettre) et renvoyait donc vers atm.hellopharmacie.com/atm/ au
+# lieu de .../nifty/atm/ — bug du 2026-07-10. Remplacé par une redirection
+# manuelle consciente du préfixe, tout en bas de ce fichier.
 app.add_middleware(
     SessionMiddleware,
     secret_key=config.SECRET_KEY,
@@ -280,8 +285,31 @@ def grid_for_store(request: Request, db: Session = Depends(get_db), store: Store
     return _grid_response(request, db, store)
 
 
+def _store_index_response(request: Request, db: Session):
+    """Page d'accueil publique (atm.hellopharmacie.com/nifty/) : une tuile
+    compacte par point de vente actif, triées par nom — pour naviguer sans
+    connaître le sigle à l'avance."""
+    stores = db.query(Store).filter(Store.is_active.is_(True)).order_by(Store.name).all()
+    return templates.TemplateResponse(
+        "store_index.html",
+        {
+            "request": request,
+            "mount_prefix": _mount_prefix(request),
+            "stores": [{"store": s, "url_prefix": _store_url_prefix(request, s)} for s in stores],
+        },
+    )
+
+
 @app.get("/", response_class=HTMLResponse)
-def grid_legacy(request: Request, db: Session = Depends(get_db), store: Store = Depends(get_default_store)):
+def root(request: Request, db: Session = Depends(get_db)):
+    """Racine : côté public (passerelle /nifty/), affiche l'index de tous les
+    points de vente. En accès direct Tailscale, garde le comportement
+    historique (grille d'Artemare directement, favori existant)."""
+    if _is_public_gateway(request):
+        return _store_index_response(request, db)
+    store = db.query(Store).filter(Store.code == config.DEFAULT_STORE_CODE).first()
+    if not store:
+        raise HTTPException(status_code=500, detail="Magasin par défaut introuvable")
     return _grid_response(request, db, store)
 
 
@@ -1244,3 +1272,16 @@ def superadmin_enable_store(store_id: int, request: Request, db: Session = Depen
         store.is_active = True
         db.commit()
     return RedirectResponse("/superadmin", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Redirection manuelle "/{code}" (sans slash final) -> "/{code}/", consciente
+# du préfixe /nifty. Enregistrée en tout dernier pour ne jamais intercepter
+# une route fixe à un seul segment (superadmin, promotions, verify...) — voir
+# redirect_slashes=False plus haut.
+# ---------------------------------------------------------------------------
+
+
+@app.get("/{code}", response_class=RedirectResponse)
+def grid_for_store_redirect_missing_slash(request: Request, db: Session = Depends(get_db), store: Store = Depends(get_store_by_code)):
+    return RedirectResponse(f"{_store_url_prefix(request, store)}/", status_code=307)
