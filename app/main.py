@@ -153,15 +153,13 @@ def get_store_by_code(request: Request, code: str, db: Session = Depends(get_db)
 
 
 def get_store_for_admin_by_code(request: Request, code: str, db: Session = Depends(get_db)) -> Store:
-    """Comme get_store_by_code, mais pour les routes /{code}/admin/* : bloque
-    en plus l'accès à un magasin "erpnext" (Artemare) à travers la passerelle
-    publique — sa grille est publique depuis le 2026-07-10, mais ses réglages
-    doivent rester réservés au mot de passe admin (ils pilotent la synchro
-    ERPNext)."""
-    store = get_store_by_code(request, code, db)
-    if _is_public_gateway(request) and store.integration == INTEGRATION_ERPNEXT:
-        raise HTTPException(status_code=404, detail="Introuvable")
-    return store
+    """Comme get_store_by_code, pour les routes /{code}/admin/*. Depuis le
+    2026-07-10 (soir), tous les magasins (Artemare comme les autres) utilisent
+    le même compte email + mot de passe et sont protégés de la même façon,
+    y compris via la passerelle publique — plus de blocage spécifique à
+    "erpnext" ici (décision d'Olivier : "même système pour tous garantit
+    qu'une erreur observée soit corrigée chez tous")."""
+    return get_store_by_code(request, code, db)
 
 
 def get_default_store(request: Request, db: Session = Depends(get_db)) -> Store:
@@ -204,15 +202,13 @@ def _is_store_admin_logged_in(request: Request, store: Store) -> bool:
 
 
 def _require_store_admin(request: Request, store: Store):
-    """Un point de vente "erpnext" (Artemare aujourd'hui) garde le mot de
-    passe admin historique (partagé, session globale is_admin). Un point de
-    vente "standalone" (format de dépannage) a son propre compte : email de
-    contact + mot de passe choisi à la confirmation, session propre au
-    magasin (voir _log_in_store_admin)."""
-    if store.integration == INTEGRATION_ERPNEXT:
-        if not is_admin(request):
-            raise HTTPException(status_code=307, headers={"Location": f"{_store_url_prefix(request, store)}/admin/login"})
-        return
+    """Tous les magasins (Artemare compris depuis le 2026-07-10 soir) ont
+    leur propre compte : email de contact + mot de passe, session propre au
+    magasin (voir _log_in_store_admin). Ancien comportement (Artemare sur le
+    mot de passe admin partagé avec le superadmin) abandonné : un même mot
+    de passe ouvrant à la fois les réglages Nifty d'Artemare et la création/
+    désactivation de n'importe quel point de vente était un risque inutile
+    une fois ces réglages exposés publiquement (nécessaire pour le MCP)."""
     if not _is_store_admin_logged_in(request, store):
         raise HTTPException(status_code=307, headers={"Location": f"{_store_url_prefix(request, store)}/admin/login"})
 
@@ -396,23 +392,8 @@ def admin_login_form_legacy(request: Request, store: Store = Depends(get_default
 def _admin_login_response(
     request: Request, store: Store, password: str, email: str = "", remember_me: bool = False
 ):
-    if store.integration == INTEGRATION_ERPNEXT:
-        if check_password(password):
-            request.session["is_admin"] = True
-            return RedirectResponse(f"{_store_url_prefix(request, store)}/admin/pending", status_code=303)
-        return templates.TemplateResponse(
-            "admin_login.html",
-            {
-                "request": request,
-                "mount_prefix": _mount_prefix(request),
-                "error": "Mot de passe incorrect",
-                "url_prefix": f"{_store_url_prefix(request, store)}",
-                "store": store,
-            },
-            status_code=401,
-        )
-
-    # Point de vente "standalone" : connexion par email + mot de passe propres au magasin.
+    # Connexion par email + mot de passe propres au magasin — même mécanisme
+    # pour tous les points de vente, Artemare comprise depuis le 2026-07-10 soir.
     valid_email = bool(store.contact_email) and email.strip().lower() == store.contact_email.lower()
     if valid_email and verify_store_password(password, store.password_hash):
         _log_in_store_admin(request, store, remember_me)
@@ -442,8 +423,14 @@ def admin_login_for_store(
 
 
 @app.post("/admin/login", response_class=HTMLResponse)
-def admin_login_legacy(request: Request, store: Store = Depends(get_default_store), password: str = Form(...)):
-    return _admin_login_response(request, store, password)
+def admin_login_legacy(
+    request: Request,
+    store: Store = Depends(get_default_store),
+    password: str = Form(...),
+    email: str = Form(""),
+    remember_me: bool = Form(False),
+):
+    return _admin_login_response(request, store, password, email, remember_me)
 
 
 @app.post("/{code}/admin/logout")

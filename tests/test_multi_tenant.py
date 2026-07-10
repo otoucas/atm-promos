@@ -401,8 +401,7 @@ def test_superadmin_rejects_same_email_for_two_stores(db, monkeypatch):
 def test_public_gateway_header_allows_erpnext_store_grid(db):
     """Depuis le 2026-07-10 (suite), la grille d'Artemare est volontairement
     publique (sous le sigle ATM) pour rejoindre le format des autres points
-    de vente du groupement — seuls ses réglages restent protégés (test
-    suivant)."""
+    de vente du groupement."""
     client = _client(db)
     try:
         with client as c:
@@ -412,15 +411,24 @@ def test_public_gateway_header_allows_erpnext_store_grid(db):
         main.app.dependency_overrides.clear()
 
 
-def test_public_gateway_header_blocks_erpnext_store_admin(db):
-    """La passerelle publique ne doit jamais atteindre les réglages/admin
-    d'Artemare, même si nginx était mal réglé un jour — filet de sécurité
-    applicatif (get_store_for_admin_by_code)."""
+def test_public_gateway_header_requires_login_for_erpnext_store_admin(db):
+    """Revirement du 2026-07-10 (soir) : le lien "Paramètres" affiché sur la
+    grille publique d'Artemare renvoyait sur une page inexistante (404 brut),
+    la passerelle publique bloquant tout /ART/admin/* sans distinction —
+    repéré par Olivier en cliquant dessus depuis l'adresse publique. Décision
+    ("même système pour tous garantit qu'une erreur observée soit corrigée
+    chez tous") : Artemare est désormais protégée par son propre compte
+    email + mot de passe, comme n'importe quel autre point de vente — plus
+    de blocage spécifique "erpnext" au niveau de la passerelle publique,
+    juste une exigence de connexion comme pour tous les magasins."""
     client = _client(db)
     try:
         with client as c:
-            resp = c.get(f"/{config.DEFAULT_STORE_CODE}/admin/pending", headers={"X-Nifty-Public-Gateway": "1"})
-        assert resp.status_code == 404
+            resp = c.get(
+                f"/{config.DEFAULT_STORE_CODE}/admin/pending", headers={"X-Nifty-Public-Gateway": "1"}, follow_redirects=False
+            )
+        assert resp.status_code == 307
+        assert resp.headers["location"] == f"/{config.DEFAULT_STORE_CODE}/admin/login"
     finally:
         main.app.dependency_overrides.clear()
 

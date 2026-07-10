@@ -4,20 +4,14 @@
 {% block content %}
 <form class="stacked" method="post" action="{{ url_prefix|default('') }}/admin/login">
   {% if error %}<div class="error-box">{{ error }}</div>{% endif %}
-  {% if store and store.integration != 'erpnext' %}
   <label for="email">Email du point de vente</label>
   <input type="email" id="email" name="email" autofocus required>
-  {% endif %}
   <label for="password">Mot de passe</label>
-  <input type="password" id="password" name="password" {% if not store or store.integration == 'erpnext' %}autofocus{% endif %} required>
-  {% if store and store.integration != 'erpnext' %}
+  <input type="password" id="password" name="password" required>
   <label style="display:flex; align-items:center; gap:8px; font-weight:normal;">
     <input type="checkbox" name="remember_me" value="true" style="width:auto;"> Se souvenir de moi
   </label>
-  {% endif %}
   <button type="submit">Se connecter</button>
 </form>
-{% if store and store.integration != 'erpnext' %}
 <p style="margin-top:12px;"><a href="{{ url_prefix|default('') }}/admin/forgot-password">Mot de passe oublié ?</a></p>
-{% endif %}
 {% endblock %}
