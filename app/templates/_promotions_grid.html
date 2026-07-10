@@ -16,7 +16,7 @@
       {% if promo.id in conflict_ids %}<span class="conflict-badge" aria-hidden="true">⚠</span>{% endif %}
       <span class="visual">
         {% if promo.logo_path %}
-          <img src="/media/logos/{{ promo.logo_path }}" alt="{{ promo.brand_name }}">
+          <img src="{{ mount_prefix|default('') }}/media/logos/{{ promo.logo_path }}" alt="{{ promo.brand_name }}">
         {% elif promo.logo_url %}
           <img src="{{ promo.logo_url }}" alt="{{ promo.brand_name }}" onerror="this.remove(); this.nextElementSibling.style.display='flex'">
           <span class="fallback-badge" style="display:none">{{ promo.brand_name[:2]|upper }}</span>

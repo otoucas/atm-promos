@@ -1,6 +1,6 @@
 <div class="code-card">
   {% if promotion.logo_path %}
-    <div class="visual"><img src="/media/logos/{{ promotion.logo_path }}" alt="{{ promotion.brand_name }}"></div>
+    <div class="visual"><img src="{{ mount_prefix|default('') }}/media/logos/{{ promotion.logo_path }}" alt="{{ promotion.brand_name }}"></div>
   {% elif promotion.logo_url %}
     <div class="visual"><img src="{{ promotion.logo_url }}" alt="{{ promotion.brand_name }}" onerror="this.parentElement.style.display='none'"></div>
   {% endif %}

@@ -195,6 +195,69 @@ def test_superadmin_rejects_code_not_three_letters(db):
         main.app.dependency_overrides.clear()
 
 
+def test_public_gateway_header_blocks_erpnext_store(db):
+    """The public gateway (atm.hellopharmacie.com/nifty/, added 2026-07-10)
+    must never reach Artemare, even if nginx's own deny rules were ever
+    misconfigured — this is the application-level safety net."""
+    client = _client(db)
+    try:
+        with client as c:
+            resp = c.get(f"/{config.DEFAULT_STORE_CODE}/", headers={"X-Nifty-Public-Gateway": "1"})
+        assert resp.status_code == 404
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_public_gateway_header_blocks_legacy_root(db):
+    client = _client(db)
+    try:
+        with client as c:
+            resp = c.get("/", headers={"X-Nifty-Public-Gateway": "1"})
+        assert resp.status_code == 404
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_public_gateway_header_blocks_superadmin(db):
+    client = _client(db)
+    try:
+        with client as c:
+            resp = c.get("/superadmin", headers={"X-Nifty-Public-Gateway": "1"}, follow_redirects=False)
+        assert resp.status_code == 404
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_public_gateway_header_allows_standalone_store(db):
+    store = _make_store(db, "LYO")
+    client = _client(db)
+    try:
+        with client as c:
+            resp = c.get("/LYO/", headers={"X-Nifty-Public-Gateway": "1"})
+        assert resp.status_code == 200
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_mount_prefix_from_forwarded_header_applied_to_static_and_logo_links(db):
+    """X-Forwarded-Prefix (set by the nginx /nifty/ location) must be
+    reflected in absolute /static and /media/logos links, since the reverse
+    proxy strips that prefix before forwarding — otherwise the browser would
+    request assets at the wrong path and get a 404."""
+    store = _make_store(db, "LYO")
+    db.add(Promotion(store_id=store.id, brand_name="Fixodent", highco_reference="ref", status=STATUS_ACTIVE, logo_path="fixodent.png"))
+    db.commit()
+
+    client = _client(db)
+    try:
+        with client as c:
+            resp = c.get("/LYO/", headers={"X-Forwarded-Prefix": "/nifty"})
+        assert "/nifty/static/style.css" in resp.text
+        assert "/nifty/media/logos/fixodent.png" in resp.text
+    finally:
+        main.app.dependency_overrides.clear()
+
+
 def test_erpnext_history_never_shows_other_store_codes(db, monkeypatch):
     """Regression guard for the join in admin_history: history must stay
     scoped per store even though GeneratedCode has no store_id of its own."""

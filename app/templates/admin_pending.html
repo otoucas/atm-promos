@@ -11,7 +11,7 @@
   <td><input type="checkbox" name="selected" value="{{ promo.id }}"></td>
   <td>
     {% if promo.logo_path %}
-      <img class="thumb" src="/media/logos/{{ promo.logo_path }}" alt="" style="height:36px; max-width:60px; object-fit:contain; cursor:zoom-in;">
+      <img class="thumb" src="{{ mount_prefix|default('') }}/media/logos/{{ promo.logo_path }}" alt="" style="height:36px; max-width:60px; object-fit:contain; cursor:zoom-in;">
     {% elif promo.logo_url %}
       <img class="thumb" src="{{ promo.logo_url }}" alt="" style="height:36px; max-width:60px; object-fit:contain; cursor:zoom-in;" onerror="this.style.display='none'">
     {% else %}—{% endif %}

@@ -90,14 +90,40 @@ def on_shutdown():
 # ---------------------------------------------------------------------------
 
 
-def get_store_by_code(code: str, db: Session = Depends(get_db)) -> Store:
+# En-tête posée uniquement par la passerelle nginx publique
+# (atm.hellopharmacie.com/nifty/, voir déploiement du 2026-07-10) — jamais
+# présente sur un accès direct via Tailscale (100.99.14.86:8010). Sert de
+# double sécurité, EN PLUS des règles nginx qui bloquent déjà ces chemins :
+# même si la config nginx était un jour mal réglée, l'appli refuse quand même
+# de servir Artemare/admin/superadmin/legacy à travers cette passerelle.
+_PUBLIC_GATEWAY_HEADER = "x-nifty-public-gateway"
+
+
+def _is_public_gateway(request: Request) -> bool:
+    return request.headers.get(_PUBLIC_GATEWAY_HEADER) == "1"
+
+
+def _mount_prefix(request: Request) -> str:
+    """Préfixe de chemin ajouté par le reverse proxy public (ex: "/nifty"),
+    à répercuter sur les liens absolus vers /static et /media/logos. Vide sur
+    un accès direct Tailscale (pas de reverse proxy entre les deux)."""
+    return request.headers.get("x-forwarded-prefix", "").rstrip("/")
+
+
+def get_store_by_code(request: Request, code: str, db: Session = Depends(get_db)) -> Store:
     store = db.query(Store).filter(Store.code == code.upper(), Store.is_active.is_(True)).first()
     if not store:
+        raise HTTPException(status_code=404, detail="Point de vente inconnu")
+    if _is_public_gateway(request) and store.integration == INTEGRATION_ERPNEXT:
+        # Ne devrait déjà plus arriver ici (bloqué par nginx) — filet de
+        # sécurité applicatif si la config nginx changeait un jour.
         raise HTTPException(status_code=404, detail="Point de vente inconnu")
     return store
 
 
-def get_default_store(db: Session = Depends(get_db)) -> Store:
+def get_default_store(request: Request, db: Session = Depends(get_db)) -> Store:
+    if _is_public_gateway(request):
+        raise HTTPException(status_code=404, detail="Introuvable")
     store = db.query(Store).filter(Store.code == config.DEFAULT_STORE_CODE).first()
     if not store:
         raise HTTPException(status_code=500, detail="Magasin par défaut introuvable")
@@ -118,6 +144,8 @@ def _require_store_admin(request: Request, store: Store):
 
 
 def _require_superadmin(request: Request):
+    if _is_public_gateway(request):
+        raise HTTPException(status_code=404, detail="Introuvable")
     if not is_admin(request):
         raise HTTPException(status_code=307, headers={"Location": "/superadmin/login"})
 
@@ -170,7 +198,7 @@ def _grid_response(request: Request, db: Session, store: Store):
     return templates.TemplateResponse(
         "operator_grid.html",
         {
-            "request": request,
+            "request": request, "mount_prefix": _mount_prefix(request),
             "promotions": promotions,
             "conflict_ids": conflict_ids,
             "url_prefix": f"/{store.code}",
@@ -215,7 +243,7 @@ def _generate_code_response(promotion_id: int, request: Request, db: Session, st
         db.add(GeneratedCode(promotion_id=promo.id, code=code))
         db.commit()
 
-    context = {"request": request, "promotion": promo, "code": code, "error": error, "url_prefix": f"/{store.code}"}
+    context = {"request": request, "mount_prefix": _mount_prefix(request), "promotion": promo, "code": code, "error": error, "url_prefix": f"/{store.code}"}
     # La grille appelle cette route via fetch() pour afficher le code dans une
     # pop-up sans navigation — repli sur la page complète si JS est coupé
     # (navigation classique du <form>, sans cet en-tête).
@@ -247,7 +275,7 @@ def generate_code_legacy(
 
 def _admin_login_form_response(request: Request, store: Store):
     return templates.TemplateResponse(
-        "admin_login.html", {"request": request, "error": None, "url_prefix": f"/{store.code}"}
+        "admin_login.html", {"request": request, "mount_prefix": _mount_prefix(request), "error": None, "url_prefix": f"/{store.code}"}
     )
 
 
@@ -267,7 +295,7 @@ def _admin_login_response(request: Request, store: Store, password: str):
         return RedirectResponse(f"/{store.code}/admin/pending", status_code=303)
     return templates.TemplateResponse(
         "admin_login.html",
-        {"request": request, "error": "Mot de passe incorrect", "url_prefix": f"/{store.code}"},
+        {"request": request, "mount_prefix": _mount_prefix(request), "error": "Mot de passe incorrect", "url_prefix": f"/{store.code}"},
         status_code=401,
     )
 
@@ -307,7 +335,7 @@ def _admin_pending_response(request: Request, db: Session, store: Store):
     return templates.TemplateResponse(
         "admin_pending.html",
         {
-            "request": request,
+            "request": request, "mount_prefix": _mount_prefix(request),
             "complete": complete,
             "incomplete": incomplete,
             "flash": request.query_params.get("flash"),
@@ -490,7 +518,7 @@ def _admin_promotions_response(request: Request, db: Session, store: Store):
     return templates.TemplateResponse(
         "admin_promotions.html",
         {
-            "request": request,
+            "request": request, "mount_prefix": _mount_prefix(request),
             "active": active,
             "archived": archived,
             "conflict_ids": conflict_ids,
@@ -602,7 +630,7 @@ async def admin_set_product_codes_legacy(
 def _admin_new_promotion_form_response(request: Request, store: Store):
     _require_store_admin(request, store)
     return templates.TemplateResponse(
-        "admin_new_promotion.html", {"request": request, "error": None, "url_prefix": f"/{store.code}", "store": store}
+        "admin_new_promotion.html", {"request": request, "mount_prefix": _mount_prefix(request), "error": None, "url_prefix": f"/{store.code}", "store": store}
     )
 
 
@@ -638,7 +666,7 @@ async def _admin_new_promotion_response(
         return templates.TemplateResponse(
             "admin_new_promotion.html",
             {
-                "request": request,
+                "request": request, "mount_prefix": _mount_prefix(request),
                 "error": "Impossible de déterminer la référence HighCo (QR illisible et aucun lien fourni).",
                 "url_prefix": f"/{store.code}",
                 "store": store,
@@ -711,7 +739,7 @@ def _admin_history_response(request: Request, db: Session, store: Store):
     )
     return templates.TemplateResponse(
         "admin_history.html",
-        {"request": request, "history": history, "url_prefix": f"/{store.code}", "store": store},
+        {"request": request, "mount_prefix": _mount_prefix(request), "history": history, "url_prefix": f"/{store.code}", "store": store},
     )
 
 
@@ -814,7 +842,7 @@ def admin_export_promotions_csv_legacy(
 
 @app.get("/superadmin/login", response_class=HTMLResponse)
 def superadmin_login_form(request: Request):
-    return templates.TemplateResponse("superadmin_login.html", {"request": request, "error": None})
+    return templates.TemplateResponse("superadmin_login.html", {"request": request, "mount_prefix": _mount_prefix(request), "error": None})
 
 
 @app.post("/superadmin/login", response_class=HTMLResponse)
@@ -823,7 +851,7 @@ def superadmin_login(request: Request, password: str = Form(...)):
         request.session["is_admin"] = True
         return RedirectResponse("/superadmin", status_code=303)
     return templates.TemplateResponse(
-        "superadmin_login.html", {"request": request, "error": "Mot de passe incorrect"}, status_code=401
+        "superadmin_login.html", {"request": request, "mount_prefix": _mount_prefix(request), "error": "Mot de passe incorrect"}, status_code=401
     )
 
 
@@ -859,14 +887,14 @@ def superadmin_dashboard(request: Request, db: Session = Depends(get_db)):
         )
     return templates.TemplateResponse(
         "superadmin_dashboard.html",
-        {"request": request, "rows": rows, "flash": request.query_params.get("flash")},
+        {"request": request, "mount_prefix": _mount_prefix(request), "rows": rows, "flash": request.query_params.get("flash")},
     )
 
 
 @app.get("/superadmin/stores/new", response_class=HTMLResponse)
 def superadmin_new_store_form(request: Request):
     _require_superadmin(request)
-    return templates.TemplateResponse("superadmin_new_store.html", {"request": request, "error": None})
+    return templates.TemplateResponse("superadmin_new_store.html", {"request": request, "mount_prefix": _mount_prefix(request), "error": None})
 
 
 @app.post("/superadmin/stores/new", response_class=HTMLResponse)
@@ -887,7 +915,7 @@ def superadmin_new_store(
 
     if error:
         return templates.TemplateResponse(
-            "superadmin_new_store.html", {"request": request, "error": error}, status_code=400
+            "superadmin_new_store.html", {"request": request, "mount_prefix": _mount_prefix(request), "error": error}, status_code=400
         )
 
     store = Store(code=normalized, name=name.strip(), integration=INTEGRATION_STANDALONE)
