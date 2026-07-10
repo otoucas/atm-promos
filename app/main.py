@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import config, highco
-from .auth import check_password, is_admin
+from .auth import check_password, hash_password, is_admin, verify_store_password
 from .database import get_db, init_db
 from .gmail_poller import poll_gmail_once
 from .jobs import run_auto_archive, run_daily_review, run_erpnext_pull, run_erpnext_sync, run_gmail_poll
@@ -35,12 +35,22 @@ from .models import (
 )
 from .promotion_rules import find_conflicting_ids
 from .qrcode_utils import extract_qr_payload
-from .store_requests import build_contact_email, generate_verification_token, send_duplicate_code_alert, send_verification_email
+from .store_requests import (
+    build_contact_email,
+    generate_verification_token,
+    send_duplicate_code_alert,
+    send_password_reset_email,
+    send_verification_email,
+)
 
 logging.basicConfig(level=logging.INFO)
 
 app = FastAPI(title="Codes promo pharmacie")
-app.add_middleware(SessionMiddleware, secret_key=config.SECRET_KEY)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=config.SECRET_KEY,
+    max_age=config.SESSION_COOKIE_MAX_AGE_DAYS * 24 * 60 * 60,
+)
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 app.mount("/media/logos", StaticFiles(directory=config.LOGO_DIR), name="logos")
 
@@ -143,16 +153,47 @@ def get_default_store(request: Request, db: Session = Depends(get_db)) -> Store:
     return store
 
 
+def _store_session_key(store: Store) -> str:
+    return f"store_admin_{store.id}"
+
+
+def _log_in_store_admin(request: Request, store: Store, remember_me: bool) -> None:
+    key = _store_session_key(store)
+    request.session[key] = True
+    expiry_key = f"{key}_expires"
+    if remember_me:
+        # Pas d'expiration applicative — dure aussi longtemps que le cookie
+        # de session lui-même (config.SESSION_COOKIE_MAX_AGE_DAYS).
+        request.session.pop(expiry_key, None)
+    else:
+        expires_at = datetime.datetime.utcnow() + datetime.timedelta(minutes=config.STORE_SESSION_DEFAULT_MINUTES)
+        request.session[expiry_key] = expires_at.isoformat()
+
+
+def _is_store_admin_logged_in(request: Request, store: Store) -> bool:
+    key = _store_session_key(store)
+    if not request.session.get(key):
+        return False
+    expiry_key = f"{key}_expires"
+    expires_at = request.session.get(expiry_key)
+    if expires_at and datetime.datetime.utcnow().isoformat() > expires_at:
+        request.session.pop(key, None)
+        request.session.pop(expiry_key, None)
+        return False
+    return True
+
+
 def _require_store_admin(request: Request, store: Store):
     """Un point de vente "erpnext" (Artemare aujourd'hui) garde le mot de
-    passe admin historique. Un point de vente "standalone" (format de
-    dépannage) n'a volontairement aucune authentification sur ses propres
-    pages de réglages — demande explicite : ces pages doivent rester
-    utilisables sans code par l'équipe du point de vente, y compris depuis
-    l'extérieur du réseau Tailscale."""
-    if store.integration != INTEGRATION_ERPNEXT:
+    passe admin historique (partagé, session globale is_admin). Un point de
+    vente "standalone" (format de dépannage) a son propre compte : email de
+    contact + mot de passe choisi à la confirmation, session propre au
+    magasin (voir _log_in_store_admin)."""
+    if store.integration == INTEGRATION_ERPNEXT:
+        if not is_admin(request):
+            raise HTTPException(status_code=307, headers={"Location": f"/{store.code}/admin/login"})
         return
-    if not is_admin(request):
+    if not _is_store_admin_logged_in(request, store):
         raise HTTPException(status_code=307, headers={"Location": f"/{store.code}/admin/login"})
 
 
@@ -286,9 +327,16 @@ def generate_code_legacy(
 # ---------------------------------------------------------------------------
 
 
-def _admin_login_form_response(request: Request, store: Store):
+def _admin_login_form_response(request: Request, store: Store, error: str | None = None):
     return templates.TemplateResponse(
-        "admin_login.html", {"request": request, "mount_prefix": _mount_prefix(request), "error": None, "url_prefix": f"/{store.code}"}
+        "admin_login.html",
+        {
+            "request": request,
+            "mount_prefix": _mount_prefix(request),
+            "error": error,
+            "url_prefix": f"/{store.code}",
+            "store": store,
+        },
     )
 
 
@@ -302,20 +350,52 @@ def admin_login_form_legacy(request: Request, store: Store = Depends(get_default
     return _admin_login_form_response(request, store)
 
 
-def _admin_login_response(request: Request, store: Store, password: str):
-    if check_password(password):
-        request.session["is_admin"] = True
+def _admin_login_response(
+    request: Request, store: Store, password: str, email: str = "", remember_me: bool = False
+):
+    if store.integration == INTEGRATION_ERPNEXT:
+        if check_password(password):
+            request.session["is_admin"] = True
+            return RedirectResponse(f"/{store.code}/admin/pending", status_code=303)
+        return templates.TemplateResponse(
+            "admin_login.html",
+            {
+                "request": request,
+                "mount_prefix": _mount_prefix(request),
+                "error": "Mot de passe incorrect",
+                "url_prefix": f"/{store.code}",
+                "store": store,
+            },
+            status_code=401,
+        )
+
+    # Point de vente "standalone" : connexion par email + mot de passe propres au magasin.
+    valid_email = bool(store.contact_email) and email.strip().lower() == store.contact_email.lower()
+    if valid_email and verify_store_password(password, store.password_hash):
+        _log_in_store_admin(request, store, remember_me)
         return RedirectResponse(f"/{store.code}/admin/pending", status_code=303)
     return templates.TemplateResponse(
         "admin_login.html",
-        {"request": request, "mount_prefix": _mount_prefix(request), "error": "Mot de passe incorrect", "url_prefix": f"/{store.code}"},
+        {
+            "request": request,
+            "mount_prefix": _mount_prefix(request),
+            "error": "Email ou mot de passe incorrect",
+            "url_prefix": f"/{store.code}",
+            "store": store,
+        },
         status_code=401,
     )
 
 
 @app.post("/{code}/admin/login", response_class=HTMLResponse)
-def admin_login_for_store(request: Request, store: Store = Depends(get_store_for_admin_by_code), password: str = Form(...)):
-    return _admin_login_response(request, store, password)
+def admin_login_for_store(
+    request: Request,
+    store: Store = Depends(get_store_for_admin_by_code),
+    password: str = Form(...),
+    email: str = Form(""),
+    remember_me: bool = Form(False),
+):
+    return _admin_login_response(request, store, password, email, remember_me)
 
 
 @app.post("/admin/login", response_class=HTMLResponse)
@@ -978,22 +1058,158 @@ def superadmin_new_store(
     return RedirectResponse(f"/superadmin?flash={flash}", status_code=303)
 
 
+def _invalid_token_response(request: Request):
+    return templates.TemplateResponse(
+        "verify_result.html",
+        {"request": request, "mount_prefix": _mount_prefix(request), "ok": False, "store": None, "error": None},
+        status_code=404,
+    )
+
+
 @app.get("/verify/{token}", response_class=HTMLResponse)
-def verify_store_email(token: str, request: Request, db: Session = Depends(get_db)):
+def verify_store_email_form(token: str, request: Request, db: Session = Depends(get_db)):
+    """Choix du mot de passe du compte du point de vente — le sigle n'est
+    activé qu'une fois ce formulaire soumis (voir POST ci-dessous), pas au
+    simple clic sur le lien."""
     store = db.query(Store).filter(Store.verification_token == token).first()
     if not store or store.email_verified_at:
+        return _invalid_token_response(request)
+    return templates.TemplateResponse(
+        "set_password.html",
+        {
+            "request": request,
+            "mount_prefix": _mount_prefix(request),
+            "store": store,
+            "action": f"{config.PUBLIC_BASE_URL}/verify/{token}" if config.PUBLIC_BASE_URL else f"/verify/{token}",
+            "error": None,
+        },
+    )
+
+
+@app.post("/verify/{token}", response_class=HTMLResponse)
+def verify_store_email_submit(
+    token: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    password: str = Form(...),
+    password_confirm: str = Form(...),
+):
+    store = db.query(Store).filter(Store.verification_token == token).first()
+    if not store or store.email_verified_at:
+        return _invalid_token_response(request)
+
+    error = None
+    if len(password) < 8:
+        error = "Le mot de passe doit comporter au moins 8 caractères."
+    elif password != password_confirm:
+        error = "Les deux mots de passe ne correspondent pas."
+
+    if error:
         return templates.TemplateResponse(
-            "verify_result.html",
-            {"request": request, "mount_prefix": _mount_prefix(request), "ok": False, "store": None},
-            status_code=404,
+            "set_password.html",
+            {
+                "request": request,
+                "mount_prefix": _mount_prefix(request),
+                "store": store,
+                "action": f"/verify/{token}",
+                "error": error,
+            },
+            status_code=400,
         )
+
+    store.password_hash = hash_password(password)
     store.email_verified_at = datetime.datetime.utcnow()
     store.is_active = True
     db.commit()
+    _log_in_store_admin(request, store, remember_me=False)
+    return RedirectResponse(f"/{store.code}/admin/pending", status_code=303)
+
+
+@app.get("/{code}/admin/forgot-password", response_class=HTMLResponse)
+def forgot_password_form(request: Request, store: Store = Depends(get_store_for_admin_by_code)):
     return templates.TemplateResponse(
-        "verify_result.html",
-        {"request": request, "mount_prefix": _mount_prefix(request), "ok": True, "store": store},
+        "forgot_password.html",
+        {"request": request, "mount_prefix": _mount_prefix(request), "url_prefix": f"/{store.code}", "sent": False},
     )
+
+
+@app.post("/{code}/admin/forgot-password", response_class=HTMLResponse)
+def forgot_password_submit(request: Request, db: Session = Depends(get_db), store: Store = Depends(get_store_for_admin_by_code), email: str = Form(...)):
+    # Message générique quoi qu'il arrive (email inconnu ou non), pour ne pas
+    # révéler si une adresse est associée à ce magasin.
+    if store.contact_email and email.strip().lower() == store.contact_email.lower():
+        store.password_reset_token = generate_verification_token()
+        store.password_reset_requested_at = datetime.datetime.utcnow()
+        db.commit()
+        send_password_reset_email(store)
+    return templates.TemplateResponse(
+        "forgot_password.html",
+        {"request": request, "mount_prefix": _mount_prefix(request), "url_prefix": f"/{store.code}", "sent": True},
+    )
+
+
+def _reset_token_valid(store: Store | None) -> bool:
+    if not store or not store.password_reset_token or not store.password_reset_requested_at:
+        return False
+    age = datetime.datetime.utcnow() - store.password_reset_requested_at
+    return age <= datetime.timedelta(minutes=config.PASSWORD_RESET_TOKEN_VALIDITY_MINUTES)
+
+
+@app.get("/{code}/admin/reset-password/{token}", response_class=HTMLResponse)
+def reset_password_form(token: str, request: Request, db: Session = Depends(get_db), store: Store = Depends(get_store_for_admin_by_code)):
+    match = store if store.password_reset_token == token else None
+    if not _reset_token_valid(match):
+        return _invalid_token_response(request)
+    return templates.TemplateResponse(
+        "set_password.html",
+        {
+            "request": request,
+            "mount_prefix": _mount_prefix(request),
+            "store": store,
+            "action": f"/{store.code}/admin/reset-password/{token}",
+            "error": None,
+        },
+    )
+
+
+@app.post("/{code}/admin/reset-password/{token}", response_class=HTMLResponse)
+def reset_password_submit(
+    token: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    store: Store = Depends(get_store_for_admin_by_code),
+    password: str = Form(...),
+    password_confirm: str = Form(...),
+):
+    match = store if store.password_reset_token == token else None
+    if not _reset_token_valid(match):
+        return _invalid_token_response(request)
+
+    error = None
+    if len(password) < 8:
+        error = "Le mot de passe doit comporter au moins 8 caractères."
+    elif password != password_confirm:
+        error = "Les deux mots de passe ne correspondent pas."
+
+    if error:
+        return templates.TemplateResponse(
+            "set_password.html",
+            {
+                "request": request,
+                "mount_prefix": _mount_prefix(request),
+                "store": store,
+                "action": f"/{store.code}/admin/reset-password/{token}",
+                "error": error,
+            },
+            status_code=400,
+        )
+
+    store.password_hash = hash_password(password)
+    store.password_reset_token = None
+    store.password_reset_requested_at = None
+    db.commit()
+    _log_in_store_admin(request, store, remember_me=False)
+    return RedirectResponse(f"/{store.code}/admin/pending", status_code=303)
 
 
 @app.post("/superadmin/stores/{store_id}/disable")

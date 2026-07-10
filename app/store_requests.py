@@ -25,17 +25,20 @@ def build_contact_email(local_part: str) -> str:
 
 
 def _send_email(subject: str, body: str, to: str) -> None:
-    if not config.GMAIL_ADDRESS or not config.GMAIL_APP_PASSWORD:
-        raise RuntimeError("GMAIL_ADDRESS / GMAIL_APP_PASSWORD non configurés")
+    """Envoie depuis l'adresse @hellopharmacie.com dédiée (config.STORE_EMAIL_*)
+    — jamais depuis la boîte Gmail personnelle (config.GMAIL_ADDRESS), qui ne
+    sert qu'au relevé des promos Nifty. Voir CLAUDE.md."""
+    if not config.STORE_EMAIL_SMTP_HOST or not config.STORE_EMAIL_ADDRESS or not config.STORE_EMAIL_PASSWORD:
+        raise RuntimeError("STORE_EMAIL_SMTP_HOST / STORE_EMAIL_ADDRESS / STORE_EMAIL_PASSWORD non configurés")
 
     msg = MIMEText(body, _charset="utf-8")
     msg["Subject"] = subject
-    msg["From"] = config.GMAIL_ADDRESS
+    msg["From"] = config.STORE_EMAIL_ADDRESS
     msg["To"] = to
 
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
-        smtp.login(config.GMAIL_ADDRESS, config.GMAIL_APP_PASSWORD)
-        smtp.sendmail(config.GMAIL_ADDRESS, [to], msg.as_string())
+    with smtplib.SMTP_SSL(config.STORE_EMAIL_SMTP_HOST, config.STORE_EMAIL_SMTP_PORT) as smtp:
+        smtp.login(config.STORE_EMAIL_ADDRESS, config.STORE_EMAIL_PASSWORD)
+        smtp.sendmail(config.STORE_EMAIL_ADDRESS, [to], msg.as_string())
 
 
 def send_verification_email(store) -> bool:
@@ -57,6 +60,27 @@ def send_verification_email(store) -> bool:
     except Exception:
         logger.exception(
             "Échec de l'envoi de l'email de confirmation pour le magasin %s (%s) — lien : %s",
+            store.code, store.contact_email, link,
+        )
+        return False
+
+
+def send_password_reset_email(store) -> bool:
+    link = f"{config.PUBLIC_BASE_URL}/{store.code}/admin/reset-password/{store.password_reset_token}"
+    subject = f"Réinitialisation du mot de passe — {store.name} ({store.code})"
+    body = (
+        f"Bonjour{' ' + store.contact_name if store.contact_name else ''},\n\n"
+        f"Une demande de réinitialisation du mot de passe a été faite pour « {store.name} » (sigle {store.code}).\n\n"
+        f"Pour choisir un nouveau mot de passe, cliquez sur ce lien "
+        f"(valable {config.PASSWORD_RESET_TOKEN_VALIDITY_MINUTES} minutes) :\n{link}\n\n"
+        "Si vous n'êtes pas à l'origine de cette demande, ignorez simplement cet e-mail."
+    )
+    try:
+        _send_email(subject, body, store.contact_email)
+        return True
+    except Exception:
+        logger.exception(
+            "Échec de l'envoi de l'email de réinitialisation pour le magasin %s (%s) — lien : %s",
             store.code, store.contact_email, link,
         )
         return False

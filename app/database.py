@@ -44,6 +44,9 @@ def _ensure_store_contact_columns():
             "contact_email": "VARCHAR(255)",
             "verification_token": "VARCHAR(64)",
             "email_verified_at": "DATETIME",
+            "password_hash": "VARCHAR(255)",
+            "password_reset_token": "VARCHAR(64)",
+            "password_reset_requested_at": "DATETIME",
         },
     )
 

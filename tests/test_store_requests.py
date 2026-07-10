@@ -1,3 +1,5 @@
+import email
+
 from app import config, store_requests
 
 
@@ -17,9 +19,13 @@ def test_generate_verification_token_is_unique_and_url_safe():
         assert all(c.isalnum() or c in "-_" for c in token)
 
 
-def test_send_verification_email_returns_false_without_raising_when_gmail_not_configured(monkeypatch):
-    monkeypatch.setattr(config, "GMAIL_ADDRESS", "")
-    monkeypatch.setattr(config, "GMAIL_APP_PASSWORD", "")
+def test_send_verification_email_returns_false_without_raising_when_not_configured(monkeypatch):
+    """Volontairement séparé de GMAIL_ADDRESS (relevé Nifty) — tant que les
+    identifiants @hellopharmacie.com ne sont pas fournis, l'envoi échoue
+    proprement plutôt que de se replier sur la boîte Gmail personnelle."""
+    monkeypatch.setattr(config, "STORE_EMAIL_SMTP_HOST", "")
+    monkeypatch.setattr(config, "STORE_EMAIL_ADDRESS", "")
+    monkeypatch.setattr(config, "STORE_EMAIL_PASSWORD", "")
 
     class FakeStore:
         code = "LYO"
@@ -29,6 +35,71 @@ def test_send_verification_email_returns_false_without_raising_when_gmail_not_co
         verification_token = "abc123"
 
     assert store_requests.send_verification_email(FakeStore()) is False
+
+
+def test_send_verification_email_never_falls_back_to_gmail_address(monkeypatch):
+    """Même si GMAIL_ADDRESS est configuré (relevé Nifty), l'envoi ne doit
+    jamais l'utiliser — voir CLAUDE.md."""
+    monkeypatch.setattr(config, "GMAIL_ADDRESS", "olivier.toucas.pro@gmail.com")
+    monkeypatch.setattr(config, "GMAIL_APP_PASSWORD", "fake-app-password")
+    monkeypatch.setattr(config, "STORE_EMAIL_SMTP_HOST", "")
+    monkeypatch.setattr(config, "STORE_EMAIL_ADDRESS", "")
+    monkeypatch.setattr(config, "STORE_EMAIL_PASSWORD", "")
+
+    class FakeStore:
+        code = "LYO"
+        name = "Pharmacie de Lyon"
+        contact_name = "Jean Dupont"
+        contact_email = "jdupont@hellopharmacie.com"
+        verification_token = "abc123"
+
+    assert store_requests.send_verification_email(FakeStore()) is False
+
+
+def test_send_verification_email_uses_store_email_address_when_configured(monkeypatch):
+    monkeypatch.setattr(config, "STORE_EMAIL_SMTP_HOST", "smtp.example.com")
+    monkeypatch.setattr(config, "STORE_EMAIL_SMTP_PORT", 465)
+    monkeypatch.setattr(config, "STORE_EMAIL_ADDRESS", "olivier.toucas@hellopharmacie.com")
+    monkeypatch.setattr(config, "STORE_EMAIL_PASSWORD", "fake-password")
+    monkeypatch.setattr(config, "PUBLIC_BASE_URL", "https://atm.hellopharmacie.com/nifty")
+
+    calls = {}
+
+    class FakeSMTP:
+        def __init__(self, host, port):
+            calls["host"] = host
+            calls["port"] = port
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def login(self, user, password):
+            calls["login"] = (user, password)
+
+        def sendmail(self, from_addr, to_addrs, message):
+            calls["sendmail"] = (from_addr, to_addrs, message)
+
+    monkeypatch.setattr(store_requests.smtplib, "SMTP_SSL", FakeSMTP)
+
+    class FakeStore:
+        code = "LYO"
+        name = "Pharmacie de Lyon"
+        contact_name = "Jean Dupont"
+        contact_email = "jdupont@hellopharmacie.com"
+        verification_token = "abc123"
+
+    assert store_requests.send_verification_email(FakeStore()) is True
+    assert calls["host"] == "smtp.example.com"
+    assert calls["login"] == ("olivier.toucas@hellopharmacie.com", "fake-password")
+    from_addr, to_addrs, message = calls["sendmail"]
+    assert from_addr == "olivier.toucas@hellopharmacie.com"
+    assert to_addrs == ["jdupont@hellopharmacie.com"]
+    parsed = email.message_from_string(message)
+    body = parsed.get_payload(decode=True).decode("utf-8")
+    assert "abc123" in body
 
 
 def test_send_duplicate_code_alert_returns_false_without_recipient_configured(monkeypatch):

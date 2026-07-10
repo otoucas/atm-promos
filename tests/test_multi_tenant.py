@@ -67,13 +67,17 @@ def test_unknown_store_code_returns_404(db):
         main.app.dependency_overrides.clear()
 
 
-def test_standalone_store_admin_has_no_password(db):
+def test_standalone_store_admin_requires_login(db):
+    """Depuis le 2026-07-10 (suite), les points de vente en dépannage ont eux
+    aussi un compte (email + mot de passe) — décision d'Olivier qui remplace
+    l'accès sans authentification prévu initialement."""
     store = _make_store(db, "LYO")
     client = _client(db)
     try:
         with client as c:
             resp = c.get("/LYO/admin/pending", follow_redirects=False)
-        assert resp.status_code == 200
+        assert resp.status_code == 307
+        assert resp.headers["location"] == "/LYO/admin/login"
     finally:
         main.app.dependency_overrides.clear()
 
@@ -89,13 +93,13 @@ def test_erpnext_store_admin_requires_login(db):
         main.app.dependency_overrides.clear()
 
 
-def test_standalone_store_new_promotion_form_reachable_without_login(db):
+def test_standalone_store_new_promotion_form_requires_login(db):
     store = _make_store(db, "LYO")
     client = _client(db)
     try:
         with client as c:
-            resp = c.get("/LYO/admin/promotions/new")
-        assert resp.status_code == 200
+            resp = c.get("/LYO/admin/promotions/new", follow_redirects=False)
+        assert resp.status_code == 307
     finally:
         main.app.dependency_overrides.clear()
 
@@ -198,7 +202,7 @@ def test_new_store_grid_unreachable_until_email_verified(db, monkeypatch):
         main.app.dependency_overrides.clear()
 
 
-def test_verify_link_activates_store(db, monkeypatch):
+def test_verify_link_shows_password_form_then_activates_and_logs_in(db, monkeypatch):
     monkeypatch.setattr(main, "send_verification_email", lambda store: True)
     client = _client(db)
     try:
@@ -206,13 +210,45 @@ def test_verify_link_activates_store(db, monkeypatch):
             c.post("/superadmin/login", data={"password": config.ADMIN_PASSWORD})
             c.post("/superadmin/stores/new", data=_new_store_form("Pharmacie de Lyon", "LYO"))
             store = db.query(Store).filter(Store.code == "LYO").first()
-            resp = c.get(f"/verify/{store.verification_token}")
-            assert resp.status_code == 200
+
+            form_resp = c.get(f"/verify/{store.verification_token}")
+            assert form_resp.status_code == 200
+            assert store.password_hash is None  # pas encore choisi tant que le formulaire n'est pas soumis
+
+            submit_resp = c.post(
+                f"/verify/{store.verification_token}",
+                data={"password": "un-bon-mot-de-passe", "password_confirm": "un-bon-mot-de-passe"},
+                follow_redirects=False,
+            )
+            assert submit_resp.status_code == 303
+
+            # Auto-connecté après confirmation : la page admin est directement accessible.
+            admin_resp = c.get("/LYO/admin/pending")
             grid_resp = c.get("/LYO/")
         db.refresh(store)
         assert store.is_active is True
         assert store.email_verified_at is not None
+        assert store.password_hash is not None
+        assert admin_resp.status_code == 200
         assert grid_resp.status_code == 200
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_verify_rejects_mismatched_passwords(db, monkeypatch):
+    monkeypatch.setattr(main, "send_verification_email", lambda store: True)
+    client = _client(db)
+    try:
+        with client as c:
+            c.post("/superadmin/login", data={"password": config.ADMIN_PASSWORD})
+            c.post("/superadmin/stores/new", data=_new_store_form("Pharmacie de Lyon", "LYO"))
+            store = db.query(Store).filter(Store.code == "LYO").first()
+            resp = c.post(
+                f"/verify/{store.verification_token}",
+                data={"password": "abcdefgh", "password_confirm": "different"},
+            )
+        assert resp.status_code == 400
+        assert "ne correspondent pas" in resp.text
     finally:
         main.app.dependency_overrides.clear()
 
@@ -229,9 +265,89 @@ def test_verify_link_rejects_unknown_or_reused_token(db, monkeypatch):
             c.post("/superadmin/stores/new", data=_new_store_form("Pharmacie de Lyon", "LYO"))
             store = db.query(Store).filter(Store.code == "LYO").first()
             token = store.verification_token
-            c.get(f"/verify/{token}")
+            c.post(f"/verify/{token}", data={"password": "abcdefgh", "password_confirm": "abcdefgh"})
             reuse_resp = c.get(f"/verify/{token}")
         assert reuse_resp.status_code == 404
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_login_with_email_and_password(db, monkeypatch):
+    monkeypatch.setattr(main, "send_verification_email", lambda store: True)
+    client = _client(db)
+    try:
+        with client as c:
+            c.post("/superadmin/login", data={"password": config.ADMIN_PASSWORD})
+            c.post("/superadmin/stores/new", data=_new_store_form("Pharmacie de Lyon", "LYO", email_local_part="jdupont"))
+            store = db.query(Store).filter(Store.code == "LYO").first()
+            c.post(f"/verify/{store.verification_token}", data={"password": "un-bon-mot-de-passe", "password_confirm": "un-bon-mot-de-passe"})
+            c.post("/LYO/admin/logout")
+
+            wrong_resp = c.post(
+                "/LYO/admin/login",
+                data={"email": store.contact_email, "password": "mauvais-mot-de-passe"},
+                follow_redirects=False,
+            )
+            assert wrong_resp.status_code == 401
+
+            still_locked_out = c.get("/LYO/admin/pending", follow_redirects=False)
+            assert still_locked_out.status_code == 307
+
+            ok_resp = c.post(
+                "/LYO/admin/login",
+                data={"email": store.contact_email, "password": "un-bon-mot-de-passe"},
+                follow_redirects=False,
+            )
+            assert ok_resp.status_code == 303
+            admin_resp = c.get("/LYO/admin/pending")
+        assert admin_resp.status_code == 200
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_forgot_password_resets_and_logs_in(db, monkeypatch):
+    monkeypatch.setattr(main, "send_verification_email", lambda store: True)
+    reset_emails_sent = []
+    monkeypatch.setattr(main, "send_password_reset_email", lambda store: reset_emails_sent.append(store.code) or True)
+    client = _client(db)
+    try:
+        with client as c:
+            c.post("/superadmin/login", data={"password": config.ADMIN_PASSWORD})
+            c.post("/superadmin/stores/new", data=_new_store_form("Pharmacie de Lyon", "LYO"))
+            store = db.query(Store).filter(Store.code == "LYO").first()
+            c.post(f"/verify/{store.verification_token}", data={"password": "ancien-mdp-1234", "password_confirm": "ancien-mdp-1234"})
+            c.post("/LYO/admin/logout")
+
+            # Une adresse qui ne correspond pas ne doit rien révéler et ne rien envoyer.
+            c.post("/LYO/admin/forgot-password", data={"email": "quelquun-dautre@hellopharmacie.com"})
+            assert reset_emails_sent == []
+
+            forgot_resp = c.post("/LYO/admin/forgot-password", data={"email": store.contact_email})
+            assert forgot_resp.status_code == 200
+            assert reset_emails_sent == ["LYO"]
+
+        db.refresh(store)
+        reset_token = store.password_reset_token
+        assert reset_token
+
+        with client as c:
+            reset_submit = c.post(
+                f"/LYO/admin/reset-password/{reset_token}",
+                data={"password": "nouveau-mdp-5678", "password_confirm": "nouveau-mdp-5678"},
+                follow_redirects=False,
+            )
+            assert reset_submit.status_code == 303
+            admin_resp = c.get("/LYO/admin/pending")
+        assert admin_resp.status_code == 200
+
+        with client as c:
+            c.post("/LYO/admin/logout")
+            old_pw_resp = c.post("/LYO/admin/login", data={"email": store.contact_email, "password": "ancien-mdp-1234"})
+            assert old_pw_resp.status_code == 401
+            new_pw_resp = c.post(
+                "/LYO/admin/login", data={"email": store.contact_email, "password": "nouveau-mdp-5678"}, follow_redirects=False
+            )
+            assert new_pw_resp.status_code == 303
     finally:
         main.app.dependency_overrides.clear()
 

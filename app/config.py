@@ -62,11 +62,33 @@ DEFAULT_STORE_CODE = os.environ.get("DEFAULT_STORE_CODE", "ART")
 DEFAULT_STORE_NAME = os.environ.get("DEFAULT_STORE_NAME", "Pharmacie Artemare")
 
 # Anti-abus sur la génération de code : les pages des points de vente en
-# dépannage sont accessibles sans mot de passe depuis Internet, et chaque
+# dépannage sont accessibles publiquement depuis Internet, et chaque
 # génération consomme un vrai code HighCo à usage unique. On plafonne le
 # nombre de générations par promotion sur une fenêtre glissante.
 CODE_GENERATION_RATE_LIMIT_COUNT = int(os.environ.get("CODE_GENERATION_RATE_LIMIT_COUNT", "5"))
 CODE_GENERATION_RATE_LIMIT_WINDOW_MINUTES = int(os.environ.get("CODE_GENERATION_RATE_LIMIT_WINDOW_MINUTES", "15"))
+
+# --- Compte de connexion par point de vente (magasins "standalone") ---
+# Durée de la session si "se souvenir de moi" n'est PAS coché (minutes) —
+# au-delà, la session applicative expire même si le cookie du navigateur est
+# encore valide. Si coché, pas d'expiration applicative (le cookie de session
+# lui-même dure SESSION_COOKIE_MAX_AGE_DAYS).
+STORE_SESSION_DEFAULT_MINUTES = int(os.environ.get("STORE_SESSION_DEFAULT_MINUTES", str(8 * 60)))
+SESSION_COOKIE_MAX_AGE_DAYS = int(os.environ.get("SESSION_COOKIE_MAX_AGE_DAYS", "90"))
+# Durée de validité d'un lien "mot de passe oublié" (minutes).
+PASSWORD_RESET_TOKEN_VALIDITY_MINUTES = int(os.environ.get("PASSWORD_RESET_TOKEN_VALIDITY_MINUTES", "60"))
+
+# --- Envoi des emails de demande d'ouverture (confirmation, alerte, mot de
+# passe oublié) — VOLONTAIREMENT séparé de GMAIL_ADDRESS ci-dessus : ces
+# emails doivent apparaître comme venant du groupement pharmacie
+# (@hellopharmacie.com), jamais de la boîte Gmail personnelle utilisée pour
+# le relevé des promos Nifty. Tant que ces identifiants ne sont pas fournis,
+# l'envoi échoue proprement (best-effort, jamais de repli silencieux sur
+# GMAIL_ADDRESS).
+STORE_EMAIL_SMTP_HOST = os.environ.get("STORE_EMAIL_SMTP_HOST", "")
+STORE_EMAIL_SMTP_PORT = int(os.environ.get("STORE_EMAIL_SMTP_PORT", "465"))
+STORE_EMAIL_ADDRESS = os.environ.get("STORE_EMAIL_ADDRESS", "")
+STORE_EMAIL_PASSWORD = os.environ.get("STORE_EMAIL_PASSWORD", "")
 
 # --- Demande d'ouverture d'un point de vente (formulaire /superadmin/stores/new) ---
 # Domaine imposé pour l'email de contact — seule la partie locale (avant @)
