@@ -144,6 +144,21 @@ main {
   border-color: var(--accent);
 }
 
+.product-search {
+  margin-top: 32px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.product-search-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.product-search .search-box { max-width: 420px; }
+
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(var(--tile-size), 1fr));
@@ -311,6 +326,38 @@ main {
 .copy-btn:hover { background: var(--accent-dark); }
 .copy-btn:active { transform: scale(0.98); }
 .copy-btn.copied { background: var(--accent-dark); }
+
+.concerned-eans {
+  margin-top: 18px;
+  text-align: left;
+}
+
+.concerned-eans-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+
+.concerned-eans ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.concerned-eans li {
+  font-family: monospace;
+  font-size: 0.9rem;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 8px;
+}
 
 .error-box {
   color: var(--danger);

@@ -11,7 +11,7 @@
 {% if promotions %}
 <div class="grid" id="grid">
   {% for promo in promotions %}
-  <form class="tile-form" method="post" action="{{ url_prefix|default('') }}/generate/{{ promo.id }}" data-brand="{{ promo.display_name|lower }}">
+  <form class="tile-form" method="post" action="{{ url_prefix|default('') }}/generate/{{ promo.id }}" data-brand="{{ promo.display_name|lower }}" data-products="{{ (promo.concerned_products or '')|lower }}" data-eans="{{ promo.product_codes_list|join(',') }}">
     <button type="submit" class="tile{% if promo.id in conflict_ids %} conflict{% endif %}" title="{% if promo.id in conflict_ids %}Une autre promotion de cette marque a une période de validité qui se chevauche — vérifier avant utilisation.{% elif promo.concerned_products %}Produits concernés : {{ promo.concerned_products }}{% endif %}">
       {% if promo.id in conflict_ids %}<span class="conflict-badge" aria-hidden="true">⚠</span>{% endif %}
       <span class="visual">
@@ -29,10 +29,15 @@
   </form>
   {% endfor %}
 </div>
-<div class="empty-state" id="no-results" style="display:none">Aucune marque ne correspond à « <span id="no-results-query"></span> ».</div>
+<div class="empty-state" id="no-results" style="display:none">Aucun résultat pour « <span id="no-results-query"></span> ».</div>
 {% else %}
 <div class="empty-state">Aucune promotion active pour le moment.</div>
 {% endif %}
+
+<div class="product-search">
+  <div class="product-search-label">Rechercher par produit ou code EAN</div>
+  <input type="search" id="product-search" class="search-box" placeholder="Nom du produit (tolère les fautes) ou EAN exact…" aria-label="Rechercher un produit ou un code EAN" autocomplete="off">
+</div>
 
 <script>
   const grid = document.documentElement;
@@ -48,24 +53,83 @@
 
   // Recherche instantanée côté client — la liste est déjà chargée, pas besoin
   // d'un aller-retour serveur pour filtrer quelques dizaines de tuiles.
-  const searchInput = document.getElementById('promo-search');
+  const brandSearchInput = document.getElementById('promo-search');
+  const productSearchInput = document.getElementById('product-search');
   const tileForms = Array.from(document.querySelectorAll('.tile-form'));
   const noResults = document.getElementById('no-results');
   const noResultsQuery = document.getElementById('no-results-query');
-  if (searchInput) {
-    searchInput.addEventListener('input', () => {
-      const q = searchInput.value.trim().toLowerCase();
-      let visibleCount = 0;
-      tileForms.forEach(form => {
-        const match = !q || form.dataset.brand.includes(q);
-        form.style.display = match ? '' : 'none';
-        if (match) visibleCount += 1;
-      });
-      if (noResults) {
-        noResults.style.display = q && visibleCount === 0 ? 'block' : 'none';
-        if (noResultsQuery) noResultsQuery.textContent = searchInput.value.trim();
+
+  function normalize(str) {
+    return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  }
+
+  function levenshtein(a, b) {
+    const rows = a.length + 1;
+    const cols = b.length + 1;
+    const dp = Array.from({ length: rows }, () => new Array(cols).fill(0));
+    for (let i = 0; i < rows; i++) dp[i][0] = i;
+    for (let j = 0; j < cols; j++) dp[0][j] = j;
+    for (let i = 1; i < rows; i++) {
+      for (let j = 1; j < cols; j++) {
+        dp[i][j] = a[i - 1] === b[j - 1]
+          ? dp[i - 1][j - 1]
+          : 1 + Math.min(dp[i - 1][j - 1], dp[i - 1][j], dp[i][j - 1]);
       }
+    }
+    return dp[rows - 1][cols - 1];
+  }
+
+  function fuzzyTolerance(len) {
+    if (len <= 4) return 1;
+    if (len <= 9) return 2;
+    return 3;
+  }
+
+  // Tolérance à la faute d'orthographe : correspondance exacte/sous-chaîne en
+  // priorité (rapide), sinon distance de Levenshtein mot à mot avec un seuil
+  // qui grandit avec la longueur du mot recherché.
+  function productMatches(query, corpusText) {
+    const nq = normalize(query.trim());
+    if (!nq) return true;
+    const corpus = normalize(corpusText || '');
+    if (corpus.includes(nq)) return true;
+    const words = corpus.split(/[^a-z0-9]+/).filter(Boolean);
+    const tolerance = fuzzyTolerance(nq.length);
+    return words.some(w => (w.includes(nq) || nq.includes(w) || levenshtein(nq, w) <= tolerance));
+  }
+
+  function isEanQuery(query) {
+    return /^\d{4,}$/.test(query.trim());
+  }
+
+  function eanMatches(query, eansAttr) {
+    const q = query.trim();
+    const eans = (eansAttr || '').split(',').map(s => s.trim()).filter(Boolean);
+    return eans.includes(q);
+  }
+
+  function applyFilters() {
+    const brandQuery = brandSearchInput ? brandSearchInput.value.trim().toLowerCase() : '';
+    const productQuery = productSearchInput ? productSearchInput.value.trim() : '';
+    const eanMode = productQuery && isEanQuery(productQuery);
+    let visibleCount = 0;
+    tileForms.forEach(form => {
+      const brandOk = !brandQuery || form.dataset.brand.includes(brandQuery);
+      let productOk = true;
+      if (productQuery) {
+        productOk = eanMode
+          ? eanMatches(productQuery, form.dataset.eans)
+          : (productMatches(productQuery, form.dataset.products) || productMatches(productQuery, form.dataset.brand));
+      }
+      const match = brandOk && productOk;
+      form.style.display = match ? '' : 'none';
+      if (match) visibleCount += 1;
     });
+    if (noResults) {
+      const anyQuery = Boolean(brandQuery || productQuery);
+      noResults.style.display = anyQuery && visibleCount === 0 ? 'block' : 'none';
+      if (noResultsQuery) noResultsQuery.textContent = productQuery || brandSearchInput.value.trim();
+    }
   }
 
   // L'écran reste ouvert toute la journée au comptoir : on recharge la grille
@@ -73,10 +137,15 @@
   // Repoussé tant qu'une recherche est en cours de saisie, pour ne pas couper
   // l'opérateur en plein milieu d'une frappe devant un client.
   let reloadTimer = setTimeout(() => location.reload(), 5 * 60 * 1000);
-  if (searchInput) {
-    searchInput.addEventListener('input', () => {
-      clearTimeout(reloadTimer);
-      reloadTimer = setTimeout(() => location.reload(), 5 * 60 * 1000);
-    });
+  function resetReloadTimer() {
+    clearTimeout(reloadTimer);
+    reloadTimer = setTimeout(() => location.reload(), 5 * 60 * 1000);
+  }
+
+  if (brandSearchInput) {
+    brandSearchInput.addEventListener('input', () => { applyFilters(); resetReloadTimer(); });
+  }
+  if (productSearchInput) {
+    productSearchInput.addEventListener('input', () => { applyFilters(); resetReloadTimer(); });
   }
 </script>

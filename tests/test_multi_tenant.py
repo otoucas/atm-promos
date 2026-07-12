@@ -57,6 +57,29 @@ def test_each_store_grid_only_shows_its_own_promotions(db):
         main.app.dependency_overrides.clear()
 
 
+def test_grid_tiles_expose_product_and_ean_data_for_client_side_search(db):
+    store = _make_store(db, "LYO")
+    db.add(Promotion(
+        store_id=store.id,
+        brand_name="Fixodent",
+        highco_reference="ref-a",
+        status=STATUS_ACTIVE,
+        concerned_products="Fixodent crème adhésive",
+        product_codes="3401560123456, 3401560123457",
+    ))
+    db.commit()
+
+    client = _client(db)
+    try:
+        with client as c:
+            resp = c.get("/LYO/")
+        assert 'id="product-search"' in resp.text
+        assert 'data-products="fixodent crème adhésive"' in resp.text
+        assert 'data-eans="3401560123456,3401560123457"' in resp.text
+    finally:
+        main.app.dependency_overrides.clear()
+
+
 def test_unknown_store_code_returns_404(db):
     client = _client(db)
     try:

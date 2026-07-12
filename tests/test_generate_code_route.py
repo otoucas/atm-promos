@@ -37,6 +37,52 @@ def test_generate_code_fetch_header_returns_fragment_only(db, monkeypatch):
         main.app.dependency_overrides.clear()
 
 
+def test_generate_code_fragment_lists_concerned_eans_under_copy_button(db, monkeypatch):
+    monkeypatch.setattr(highco, "generate_code", lambda ref: "FAKE-CODE-789")
+    promo = Promotion(
+        brand_name="Fixodent",
+        highco_reference="fake-ref",
+        status=STATUS_ACTIVE,
+        product_codes="3401560123456, 3401560123457",
+    )
+    db.add(promo)
+    db.commit()
+    db.refresh(promo)
+
+    def override_get_db():
+        yield db
+
+    main.app.dependency_overrides[main.get_db] = override_get_db
+    try:
+        with TestClient(main.app) as client:
+            resp = client.post(f"/generate/{promo.id}", headers={"X-Requested-With": "fetch"})
+        assert resp.status_code == 200
+        copy_pos = resp.text.index("Copier le code")
+        eans_pos = resp.text.index("EAN concernés")
+        assert eans_pos > copy_pos
+        assert "3401560123456" in resp.text
+        assert "3401560123457" in resp.text
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_generate_code_fragment_omits_ean_block_when_no_product_codes(db, monkeypatch):
+    monkeypatch.setattr(highco, "generate_code", lambda ref: "FAKE-CODE-999")
+    promo = _make_active_promotion(db)
+
+    def override_get_db():
+        yield db
+
+    main.app.dependency_overrides[main.get_db] = override_get_db
+    try:
+        with TestClient(main.app) as client:
+            resp = client.post(f"/generate/{promo.id}", headers={"X-Requested-With": "fetch"})
+        assert resp.status_code == 200
+        assert "EAN concernés" not in resp.text
+    finally:
+        main.app.dependency_overrides.clear()
+
+
 def test_generate_code_without_fetch_header_returns_full_page(db, monkeypatch):
     monkeypatch.setattr(highco, "generate_code", lambda ref: "FAKE-CODE-456")
     promo = _make_active_promotion(db)

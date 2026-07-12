@@ -8,6 +8,14 @@
   {% if code %}
     <div class="code-value" id="code-value">{{ code }}</div>
     <button type="button" class="copy-btn" onclick="copyCode(this)">Copier le code</button>
+    {% if promotion.product_codes_list %}
+    <div class="concerned-eans">
+      <div class="concerned-eans-label">EAN concernés</div>
+      <ul>
+        {% for ean in promotion.product_codes_list %}<li>{{ ean }}</li>{% endfor %}
+      </ul>
+    </div>
+    {% endif %}
   {% else %}
     <div class="error-box">
       Impossible de générer le code pour l'instant.<br>
