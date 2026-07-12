@@ -86,6 +86,30 @@ def send_password_reset_email(store) -> bool:
         return False
 
 
+def send_suspicious_request_alert(code: str, name: str, contact_email: str, reasons: list) -> bool:
+    """La demande a bien été créée, mais ne correspond pas au fichier maître
+    du groupement (voir app/contacts_directory.py) — alerte Olivier pour
+    vérification a posteriori, sans jamais bloquer la création (les points
+    de vente "dépannage" hors réseau sont légitimement absents de ce fichier)."""
+    if not config.STORE_ALERT_RECIPIENT:
+        logger.warning("STORE_ALERT_RECIPIENT non configuré — alerte de demande étonnante (%s) non envoyée", code)
+        return False
+    subject = f"[ATM Nifty] Demande d'ouverture à vérifier — sigle « {code} »"
+    body = (
+        f"Une demande d'ouverture de point de vente a été créée pour « {name} » (sigle {code}), "
+        f"contact soumis : {contact_email}.\n\n"
+        "Elle ne correspond pas exactement au fichier maître du groupement :\n\n"
+        + "\n".join(f"- {r}" for r in reasons)
+        + "\n\nÀ vérifier manuellement si besoin (rien n'a été bloqué)."
+    )
+    try:
+        _send_email(subject, body, config.STORE_ALERT_RECIPIENT)
+        return True
+    except Exception:
+        logger.exception("Échec de l'envoi de l'alerte de demande étonnante pour %s", code)
+        return False
+
+
 def send_duplicate_code_alert(code: str, existing_store, requested_contact_email: str) -> bool:
     """Le sigle demandé existe déjà (actif ou en attente de confirmation),
     éventuellement avec un contact différent — alerte Olivier plutôt que de

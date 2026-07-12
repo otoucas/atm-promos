@@ -157,3 +157,26 @@ class McpActivityLog(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     store = relationship("Store", back_populates="mcp_activity_logs")
+
+
+class StoreRequestLog(Base):
+    """Trace de CHAQUE demande d'ouverture de point de vente (/hello public ou
+    /superadmin/stores/new), quel que soit le résultat — créée, rejetée ou
+    signalée comme étonnante. Jamais modifiée ni supprimée après coup, y
+    compris si le point de vente correspondant est ensuite désactivé/supprimé
+    en base : c'est la seule trace durable qui survit à la disparition d'un
+    Store (incident du 2026-07-12 où des comptes créés puis effacés n'avaient
+    laissé aucune trace du formulaire d'origine)."""
+
+    __tablename__ = "store_request_logs"
+
+    id = Column(Integer, primary_key=True)
+    submitted_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+    source = Column(String(20), nullable=False)  # "public" (/hello) ou "superadmin"
+    name = Column(String(200), nullable=False)
+    code = Column(String(10), nullable=False)  # tel que soumis (pas forcément valide)
+    contact_name = Column(String(200), nullable=True)
+    contact_email = Column(String(255), nullable=True)
+    outcome = Column(String(30), nullable=False)
+    directory_flags = Column(Text, nullable=True)  # une raison "étonnante" par ligne, NULL si RAS
+    store_id = Column(Integer, ForeignKey("stores.id"), nullable=True)

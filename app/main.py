@@ -14,7 +14,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import config, highco
+from . import config, contacts_directory, highco
 from .auth import check_password, hash_password, is_admin, verify_store_password
 from .database import get_db, init_db
 from .gmail_poller import poll_gmail_once
@@ -33,6 +33,7 @@ from .models import (
     ProcessedEmail,
     Promotion,
     Store,
+    StoreRequestLog,
 )
 from .promotion_rules import find_conflicting_ids
 from .qrcode_utils import extract_qr_payload
@@ -41,6 +42,7 @@ from .store_requests import (
     generate_verification_token,
     send_duplicate_code_alert,
     send_password_reset_email,
+    send_suspicious_request_alert,
     send_verification_email,
 )
 
@@ -1138,28 +1140,52 @@ def _store_requests_rate_limited(db: Session) -> bool:
     return recent_count >= config.STORE_REQUEST_RATE_LIMIT_COUNT
 
 
-def _process_store_request(db: Session, name: str, code: str, contact_name: str, email_local_part: str):
+def _process_store_request(
+    db: Session, name: str, code: str, contact_name: str, email_local_part: str, source: str = "superadmin"
+):
     """Logique commune à la création d'un point de vente, que ce soit via
-    /superadmin/stores/new (Olivier, protégé) ou /request-store (public,
-    self-service). Retourne (store_créé_ou_None, message_erreur_ou_None)."""
+    /superadmin/stores/new (Olivier, protégé) ou /hello (public, self-service).
+    Retourne (store_créé_ou_None, message_erreur_ou_None). Chaque appel est
+    journalisé dans StoreRequestLog quel que soit le résultat (voir son
+    docstring) — c'est la trace qui a manqué lors de l'incident du 2026-07-12."""
     normalized = code.strip().upper()
     local_part = email_local_part.strip().lower().split("@")[0]  # tolère qu'on colle l'adresse entière par erreur
     contact_email = build_contact_email(local_part)
 
+    def _log(outcome: str, store_id: int | None = None, flags: list | None = None):
+        db.add(
+            StoreRequestLog(
+                source=source,
+                name=name.strip(),
+                code=normalized or code.strip(),
+                contact_name=contact_name.strip() if contact_name else None,
+                contact_email=contact_email,
+                outcome=outcome,
+                directory_flags="\n".join(flags) if flags else None,
+                store_id=store_id,
+            )
+        )
+        db.commit()
+
     if _store_requests_rate_limited(db):
+        _log("rejected_rate_limited")
         return None, "Trop de demandes de création récemment — réessayez dans quelques minutes."
 
     existing_by_code = db.query(Store).filter(Store.code == normalized).first()
     existing_by_email = db.query(Store).filter(Store.contact_email == contact_email).first()
 
     if len(normalized) != 3 or not normalized.isalpha():
+        _log("rejected_invalid_code")
         return None, "Le code doit comporter exactement 3 lettres."
     if not local_part:
+        _log("rejected_missing_email")
         return None, "La partie locale de l'email (avant @) est obligatoire."
     if existing_by_code:
         send_duplicate_code_alert(normalized, existing_by_code, contact_email)
+        _log("rejected_duplicate_code")
         return None, f"Le sigle « {normalized} » est déjà utilisé ou en attente de confirmation — une alerte a été envoyée par email."
     if existing_by_email:
+        _log("rejected_duplicate_email")
         return None, f"Cette adresse a déjà un point de vente associé (sigle {existing_by_email.code}) — un email ne peut ouvrir qu'un seul sigle."
 
     store = Store(
@@ -1174,6 +1200,11 @@ def _process_store_request(db: Session, name: str, code: str, contact_name: str,
     db.add(store)
     db.commit()
     send_verification_email(store)
+
+    flags = contacts_directory.check_request(name, normalized, contact_email)
+    if flags:
+        send_suspicious_request_alert(normalized, name, contact_email, flags)
+    _log("created", store_id=store.id, flags=flags)
     return store, None
 
 
@@ -1219,6 +1250,31 @@ def superadmin_new_store(
     return RedirectResponse(f"/superadmin?flash={flash}", status_code=303)
 
 
+_OUTCOME_LABELS = {
+    "created": "Créé",
+    "rejected_rate_limited": "Rejeté (trop de demandes récentes)",
+    "rejected_invalid_code": "Rejeté (code invalide)",
+    "rejected_missing_email": "Rejeté (email manquant)",
+    "rejected_duplicate_code": "Rejeté (sigle déjà pris)",
+    "rejected_duplicate_email": "Rejeté (email déjà utilisé)",
+}
+
+
+@app.get("/superadmin/store-requests", response_class=HTMLResponse)
+def superadmin_store_requests(request: Request, db: Session = Depends(get_db)):
+    _require_superadmin(request)
+    logs = db.query(StoreRequestLog).order_by(StoreRequestLog.submitted_at.desc()).all()
+    return templates.TemplateResponse(
+        "superadmin_store_requests.html",
+        {
+            "request": request,
+            "mount_prefix": _mount_prefix(request),
+            "logs": logs,
+            "OUTCOME_LABELS": _OUTCOME_LABELS,
+        },
+    )
+
+
 @app.get("/hello", response_class=HTMLResponse)
 def request_store_form(request: Request):
     return templates.TemplateResponse(
@@ -1246,7 +1302,7 @@ def request_store_submit(
     aucun mot de passe. Le garde-fou reste que le sigle n'est activé qu'après
     confirmation du lien envoyé à une adresse @hellopharmacie.com, et qu'un
     email ne peut ouvrir qu'un seul sigle."""
-    store, error = _process_store_request(db, name, code, contact_name, email_local_part)
+    store, error = _process_store_request(db, name, code, contact_name, email_local_part, source="public")
 
     return templates.TemplateResponse(
         "request_store.html",

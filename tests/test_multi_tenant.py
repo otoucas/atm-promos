@@ -189,6 +189,105 @@ def test_superadmin_can_create_store(db, monkeypatch):
         main.app.dependency_overrides.clear()
 
 
+def test_store_request_is_logged_even_when_rejected(db, monkeypatch):
+    from app.models import StoreRequestLog
+
+    monkeypatch.setattr(main, "send_verification_email", lambda store: True)
+    client = _client(db)
+    try:
+        with client as c:
+            c.post("/superadmin/login", data={"password": config.ADMIN_PASSWORD})
+            c.post("/superadmin/stores/new", data=_new_store_form("Pharmacie de Lyon", "LYO"))
+            # Même sigle redemandé : rejeté, mais doit quand même laisser une trace.
+            c.post("/superadmin/stores/new", data=_new_store_form("Autre nom", "LYO", email_local_part="autre"))
+            # Soumission publique.
+            c.post("/hello", data=_new_store_form("Pharmacie de Grenoble", "GRE", email_local_part="ggrenoble"))
+
+        logs = db.query(StoreRequestLog).order_by(StoreRequestLog.id).all()
+        assert [log.outcome for log in logs] == ["created", "rejected_duplicate_code", "created"]
+        assert [log.source for log in logs] == ["superadmin", "superadmin", "public"]
+        assert logs[0].store_id is not None
+        # La trace du sigle LYO reste même si le point de vente est ensuite désactivé.
+        store = db.query(Store).filter(Store.code == "LYO").first()
+        store.is_active = False
+        db.commit()
+        still_there = db.query(StoreRequestLog).filter(StoreRequestLog.code == "LYO").all()
+        assert len(still_there) == 2
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_suspicious_request_flags_mismatch_with_directory_and_alerts(db, monkeypatch, tmp_path):
+    from app.models import StoreRequestLog
+
+    csv_path = tmp_path / "contacts_sigles.csv"
+    csv_path.write_text(
+        "Sigle;Nom;Mail Pharmacie (Clients / Laboratoires);Mail Titulaire 1;Mail Titulaire 2;Mail Titulaire 3;"
+        "Mail Commandes;Mail Administratif\n"
+        "LYO;Pharmacie de Lyon;lyon@hellopharmacie.com;;;;;administratif.lyon@hellopharmacie.com\n",
+        encoding="iso-8859-1",
+    )
+    monkeypatch.setattr(config, "CONTACTS_DIRECTORY_CSV_PATH", str(csv_path))
+    monkeypatch.setattr(main, "send_verification_email", lambda store: True)
+    alerts = []
+    monkeypatch.setattr(main, "send_suspicious_request_alert", lambda code, name, email, reasons: alerts.append((code, reasons)) or True)
+    client = _client(db)
+    try:
+        with client as c:
+            c.post("/superadmin/login", data={"password": config.ADMIN_PASSWORD})
+            # Email de contact ne correspond à rien de connu pour LYO dans le fichier.
+            c.post("/superadmin/stores/new", data=_new_store_form("Pharmacie de Lyon", "LYO", email_local_part="inconnu"))
+            # Sigle absent du fichier — dépannage légitime, mais signalé quand même.
+            c.post("/superadmin/stores/new", data=_new_store_form("Pharmacie de Grenoble", "GRE", email_local_part="ggrenoble"))
+
+        assert len(alerts) == 2
+        assert alerts[0][0] == "LYO"
+        assert "ne correspond à aucune adresse connue" in alerts[0][1][0]
+        assert alerts[1][0] == "GRE"
+        assert "n'apparaît pas dans le fichier groupement" in alerts[1][1][0]
+
+        logs = db.query(StoreRequestLog).order_by(StoreRequestLog.id).all()
+        assert all(log.directory_flags for log in logs)
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_matching_request_does_not_trigger_alert(db, monkeypatch, tmp_path):
+    csv_path = tmp_path / "contacts_sigles.csv"
+    csv_path.write_text(
+        "Sigle;Nom;Mail Pharmacie (Clients / Laboratoires);Mail Titulaire 1;Mail Titulaire 2;Mail Titulaire 3;"
+        "Mail Commandes;Mail Administratif\n"
+        "LYO;Pharmacie de Lyon;lyon@hellopharmacie.com;;;;;administratif.lyon@hellopharmacie.com\n",
+        encoding="iso-8859-1",
+    )
+    monkeypatch.setattr(config, "CONTACTS_DIRECTORY_CSV_PATH", str(csv_path))
+    monkeypatch.setattr(main, "send_verification_email", lambda store: True)
+    alerts = []
+    monkeypatch.setattr(main, "send_suspicious_request_alert", lambda *a: alerts.append(a) or True)
+    client = _client(db)
+    try:
+        with client as c:
+            c.post("/superadmin/login", data={"password": config.ADMIN_PASSWORD})
+            c.post("/superadmin/stores/new", data=_new_store_form("Pharmacie de Lyon", "LYO", email_local_part="administratif.lyon"))
+        assert alerts == []
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_superadmin_store_requests_page_lists_history(db, monkeypatch):
+    monkeypatch.setattr(main, "send_verification_email", lambda store: True)
+    client = _client(db)
+    try:
+        with client as c:
+            c.post("/superadmin/login", data={"password": config.ADMIN_PASSWORD})
+            c.post("/superadmin/stores/new", data=_new_store_form("Pharmacie de Lyon", "LYO"))
+            resp = c.get("/superadmin/store-requests")
+        assert resp.status_code == 200
+        assert "LYO" in resp.text
+    finally:
+        main.app.dependency_overrides.clear()
+
+
 def test_new_store_grid_unreachable_until_email_verified(db, monkeypatch):
     monkeypatch.setattr(main, "send_verification_email", lambda store: True)
     client = _client(db)

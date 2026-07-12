@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block header %}Historique des demandes{% endblock %}
+{% block header_link %}<a href="/superadmin">← Points de vente</a>{% endblock %}
+{% block content %}
+<div class="panel">
+<table class="admin-table">
+  <thead>
+    <tr>
+      <th>Date</th>
+      <th>Origine</th>
+      <th>Code</th>
+      <th>Nom</th>
+      <th>Contact</th>
+      <th>Résultat</th>
+      <th>Signalement</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for log in logs %}
+    <tr>
+      <td>{{ log.submitted_at.strftime('%d/%m/%Y %H:%M') }}</td>
+      <td>{{ 'Public (/hello)' if log.source == 'public' else 'Superadmin' }}</td>
+      <td><strong>{{ log.code }}</strong></td>
+      <td>{{ log.name }}</td>
+      <td>
+        {{ log.contact_name or '—' }}<br>
+        <span style="color:var(--muted); font-size:0.85em;">{{ log.contact_email or '—' }}</span>
+      </td>
+      <td>{{ OUTCOME_LABELS.get(log.outcome, log.outcome) }}</td>
+      <td>
+        {% if log.directory_flags %}
+          <span style="color:var(--danger);">⚠ {{ log.directory_flags|replace('\n', ' / ') }}</span>
+        {% else %}—{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+<p style="color:var(--muted); font-size:0.85rem; margin-top:12px;">
+  Toute demande d'ouverture (publique via /hello ou saisie par Olivier) reste ici, même si le point de vente correspondant est ensuite désactivé ou supprimé de la base. Le signalement compare la demande au fichier maître du groupement (sigle/nom/email) — un point de vente "dépannage" absent de ce fichier n'est pas bloqué, seulement noté.
+</p>
+{% endblock %}

@@ -100,6 +100,13 @@ STORE_EMAIL_PASSWORD = os.environ.get("STORE_EMAIL_PASSWORD", "")
 STORE_CONTACT_EMAIL_DOMAIN = os.environ.get("STORE_CONTACT_EMAIL_DOMAIN", "hellopharmacie.com")
 # Adresse qui reçoit les alertes (ex: un sigle déjà pris/en attente est redemandé).
 STORE_ALERT_RECIPIENT = os.environ.get("STORE_ALERT_RECIPIENT", "")
+
+# Fichier maître du groupement (sigle/titulaire/emails connus), déposé à la
+# main dans data/ (jamais versionné — contient des contacts réels, et ce
+# dépôt est aussi miroité en public sur GitHub). Sert uniquement à repérer
+# les demandes "étonnantes" (voir app/contacts_directory.py) — absent ou
+# introuvable, la vérification est simplement ignorée.
+CONTACTS_DIRECTORY_CSV_PATH = os.environ.get("CONTACTS_DIRECTORY_CSV_PATH", str(DATA_DIR / "contacts_sigles.csv"))
 # Base publique utilisée pour composer le lien de confirmation envoyé par email
 # (le service ne connaît pas son propre nom public, il est derrière un reverse proxy).
 PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
