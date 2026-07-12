@@ -75,8 +75,9 @@ CODE_GENERATION_RATE_LIMIT_WINDOW_MINUTES = int(os.environ.get("CODE_GENERATION_
 # lui-même dure SESSION_COOKIE_MAX_AGE_DAYS).
 STORE_SESSION_DEFAULT_MINUTES = int(os.environ.get("STORE_SESSION_DEFAULT_MINUTES", str(8 * 60)))
 SESSION_COOKIE_MAX_AGE_DAYS = int(os.environ.get("SESSION_COOKIE_MAX_AGE_DAYS", "90"))
-# Durée de validité d'un lien "mot de passe oublié" (minutes).
-PASSWORD_RESET_TOKEN_VALIDITY_MINUTES = int(os.environ.get("PASSWORD_RESET_TOKEN_VALIDITY_MINUTES", "60"))
+# Durée de validité d'un lien "mot de passe oublié" (jours) — au moins 5 jours
+# pour laisser le temps à un point de vente de traiter l'email (avant : 60 minutes).
+PASSWORD_RESET_TOKEN_VALIDITY_DAYS = int(os.environ.get("PASSWORD_RESET_TOKEN_VALIDITY_DAYS", "7"))
 # Durée de validité du lien de confirmation envoyé à la création d'un point de
 # vente (jours) — avant cela, ce lien n'expirait jamais.
 STORE_VERIFICATION_TOKEN_VALIDITY_DAYS = int(os.environ.get("STORE_VERIFICATION_TOKEN_VALIDITY_DAYS", "7"))

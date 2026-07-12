@@ -253,6 +253,34 @@ def test_verify_rejects_mismatched_passwords(db, monkeypatch):
         main.app.dependency_overrides.clear()
 
 
+def test_reset_password_link_rejects_expired_token(db, monkeypatch):
+    import datetime
+
+    monkeypatch.setattr(main, "send_verification_email", lambda store: True)
+    monkeypatch.setattr(main, "send_password_reset_email", lambda store: True)
+    client = _client(db)
+    try:
+        with client as c:
+            c.post("/superadmin/login", data={"password": config.ADMIN_PASSWORD})
+            c.post("/superadmin/stores/new", data=_new_store_form("Pharmacie de Lyon", "LYO"))
+            store = db.query(Store).filter(Store.code == "LYO").first()
+            c.post(f"/verify/{store.verification_token}", data={"password": "ancien-mdp-1234", "password_confirm": "ancien-mdp-1234"})
+            c.post("/LYO/admin/logout")
+            c.post("/LYO/admin/forgot-password", data={"email": store.contact_email})
+
+        db.refresh(store)
+        store.password_reset_requested_at = datetime.datetime.utcnow() - datetime.timedelta(
+            days=config.PASSWORD_RESET_TOKEN_VALIDITY_DAYS, hours=1
+        )
+        db.commit()
+
+        with client as c:
+            resp = c.get(f"/LYO/admin/reset-password/{store.password_reset_token}")
+        assert resp.status_code in (400, 404)
+    finally:
+        main.app.dependency_overrides.clear()
+
+
 def test_verify_link_rejects_expired_token(db, monkeypatch):
     import datetime
 

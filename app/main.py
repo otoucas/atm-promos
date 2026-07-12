@@ -1382,7 +1382,7 @@ def _reset_token_valid(store: Store | None) -> bool:
     if not store or not store.password_reset_token or not store.password_reset_requested_at:
         return False
     age = datetime.datetime.utcnow() - store.password_reset_requested_at
-    return age <= datetime.timedelta(minutes=config.PASSWORD_RESET_TOKEN_VALIDITY_MINUTES)
+    return age <= datetime.timedelta(days=config.PASSWORD_RESET_TOKEN_VALIDITY_DAYS)
 
 
 @app.get("/{code}/admin/reset-password/{token}", response_class=HTMLResponse)

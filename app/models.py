@@ -46,7 +46,7 @@ class Store(Base):
     # de passe est choisi au clic sur le lien de confirmation (voir
     # verification_token ci-dessus), pas avant. password_reset_token/_at
     # permettent un lien "mot de passe oublié" à usage unique et limité dans
-    # le temps (voir config.PASSWORD_RESET_TOKEN_VALIDITY_MINUTES).
+    # le temps (voir config.PASSWORD_RESET_TOKEN_VALIDITY_DAYS).
     password_hash = Column(String(255), nullable=True)
     password_reset_token = Column(String(64), nullable=True, unique=True, index=True)
     password_reset_requested_at = Column(DateTime, nullable=True)

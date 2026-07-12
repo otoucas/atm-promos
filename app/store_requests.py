@@ -72,7 +72,7 @@ def send_password_reset_email(store) -> bool:
         f"Bonjour{' ' + store.contact_name if store.contact_name else ''},\n\n"
         f"Une demande de réinitialisation du mot de passe a été faite pour « {store.name} » (sigle {store.code}).\n\n"
         f"Pour choisir un nouveau mot de passe, cliquez sur ce lien "
-        f"(valable {config.PASSWORD_RESET_TOKEN_VALIDITY_MINUTES} minutes) :\n{link}\n\n"
+        f"(valable {config.PASSWORD_RESET_TOKEN_VALIDITY_DAYS} jours) :\n{link}\n\n"
         "Si vous n'êtes pas à l'origine de cette demande, ignorez simplement cet e-mail."
     )
     try:
