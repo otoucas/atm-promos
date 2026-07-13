@@ -11,6 +11,7 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Upload
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -288,7 +289,7 @@ def _store_index_response(request: Request, db: Session):
     """Page d'accueil publique (atm.hellopharmacie.com/nifty/) : une tuile
     compacte par point de vente actif, triées par nom — pour naviguer sans
     connaître le sigle à l'avance."""
-    stores = db.query(Store).filter(Store.is_active.is_(True)).order_by(Store.name).all()
+    stores = db.query(Store).filter(Store.is_active.is_(True)).order_by(func.lower(Store.name)).all()
     return templates.TemplateResponse(
         "store_index.html",
         {
@@ -1071,6 +1072,63 @@ def admin_export_promotions_csv_legacy(
     request: Request, db: Session = Depends(get_db), store: Store = Depends(get_default_store)
 ):
     return _admin_export_csv_response(request, db, store)
+
+
+def _admin_export_eans_csv_response(request: Request, db: Session, store: Store):
+    """Un EAN par ligne (et non une ligne par promotion) : c'est le format
+    attendu par un import LGO qui applique une remise/un flag par code-barres,
+    plutôt qu'une simple liste de rappel pour saisie manuelle (voir
+    _admin_export_csv_response ci-dessus, qui reste le format Winpharma
+    existant). Seules les promotions avec au moins un EAN saisi apparaissent."""
+    _require_store_admin(request, store)
+    today = datetime.date.today()
+    promotions = (
+        db.query(Promotion)
+        .filter(
+            Promotion.store_id == store.id,
+            Promotion.status == STATUS_ACTIVE,
+            (Promotion.valid_until.is_(None)) | (Promotion.valid_until >= today),
+            (Promotion.valid_from.is_(None)) | (Promotion.valid_from <= today),
+        )
+        .order_by(Promotion.brand_name)
+        .all()
+    )
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, delimiter=";")
+    writer.writerow(["ean", "marque", "produit", "valide_du", "valide_au"])
+    for promo in promotions:
+        for ean in promo.product_codes_list:
+            writer.writerow(
+                [
+                    ean,
+                    promo.brand_name,
+                    promo.concerned_products or "",
+                    promo.valid_from.isoformat() if promo.valid_from else "",
+                    promo.valid_until.isoformat() if promo.valid_until else "",
+                ]
+            )
+    buffer.seek(0)
+    filename = f"ean_promotions_{store.code.lower()}_{today.isoformat()}.csv"
+    return StreamingResponse(
+        buffer,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/{code}/admin/export/eans.csv")
+def admin_export_eans_csv_for_store(
+    request: Request, db: Session = Depends(get_db), store: Store = Depends(get_store_for_admin_by_code)
+):
+    return _admin_export_eans_csv_response(request, db, store)
+
+
+@app.get("/admin/export/eans.csv")
+def admin_export_eans_csv_legacy(
+    request: Request, db: Session = Depends(get_db), store: Store = Depends(get_default_store)
+):
+    return _admin_export_eans_csv_response(request, db, store)
 
 
 # ---------------------------------------------------------------------------

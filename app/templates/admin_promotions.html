@@ -6,7 +6,11 @@
 
 <h3>Actives</h3>
 {% if active %}
-<p><a href="{{ url_prefix|default('') }}/admin/export/promotions.csv">⬇ Exporter en CSV (pour Winpharma)</a></p>
+<p>
+  <a href="{{ url_prefix|default('') }}/admin/export/promotions.csv">⬇ Exporter en CSV (pour Winpharma)</a>
+  &nbsp;·&nbsp;
+  <a href="{{ url_prefix|default('') }}/admin/export/eans.csv">⬇ Exporter les EAN concernés (pour le LGO)</a>
+</p>
 <div class="panel">
 <table class="admin-table">
   <thead><tr><th>Visuel</th><th>Marque</th><th>Montant</th><th>Produits concernés</th><th>Codes produit Winpharma</th><th>Validité</th><th>Source</th><th></th></tr></thead>

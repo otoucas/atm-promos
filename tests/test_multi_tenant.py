@@ -7,6 +7,7 @@ generation is rate-limited, and the superadmin space can create/list stores.
 from fastapi.testclient import TestClient
 
 from app import config, highco, main
+from app.auth import hash_password
 from app.models import INTEGRATION_ERPNEXT, INTEGRATION_STANDALONE, STATUS_ACTIVE, GeneratedCode, Promotion, Store
 
 
@@ -73,7 +74,7 @@ def test_grid_tiles_expose_product_and_ean_data_for_client_side_search(db):
     try:
         with client as c:
             resp = c.get("/LYO/")
-        assert 'id="product-search"' in resp.text
+        assert 'id="promo-search"' in resp.text
         assert 'data-products="fixodent crème adhésive"' in resp.text
         assert 'data-eans="3401560123456,3401560123457"' in resp.text
     finally:
@@ -146,6 +147,37 @@ def test_generate_code_rate_limited_after_threshold(db, monkeypatch):
         assert "FAKE-CODE" in r2.text
         assert "FAKE-CODE" not in r3.text
         assert "Trop de codes générés récemment" in r3.text
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_ean_export_lists_one_row_per_ean(db):
+    """Nouvel export dédié au LGO (retour Olivier du 2026-07-13) : une ligne
+    par EAN, distinct de l'export Winpharma existant qui reste une ligne par
+    promotion avec les codes regroupés."""
+    store = _make_store(db, "LYO", name="Pharmacie de Lyon")
+    store.contact_email = "contact@hellopharmacie.com"
+    store.password_hash = hash_password("un-bon-mot-de-passe")
+    db.add(Promotion(
+        store_id=store.id,
+        brand_name="Fixodent",
+        highco_reference="ref-a",
+        status=STATUS_ACTIVE,
+        product_codes="3401560123456, 3401560123457",
+    ))
+    db.commit()
+
+    client = _client(db)
+    try:
+        with client as c:
+            c.post("/LYO/admin/login", data={"email": store.contact_email, "password": "un-bon-mot-de-passe"})
+            resp = c.get("/LYO/admin/export/eans.csv")
+        assert resp.status_code == 200
+        rows = [r for r in resp.text.strip().splitlines()]
+        assert rows[0] == "ean;marque;produit;valide_du;valide_au"
+        assert len(rows) == 3  # en-tête + 2 EAN
+        assert any(row.startswith("3401560123456;Fixodent") for row in rows)
+        assert any(row.startswith("3401560123457;Fixodent") for row in rows)
     finally:
         main.app.dependency_overrides.clear()
 
@@ -615,6 +647,23 @@ def test_public_gateway_root_shows_store_index(db):
             resp = c.get("/", headers={"X-Nifty-Public-Gateway": "1"})
         assert resp.status_code == 200
         assert ">LYO<" in resp.text
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_public_gateway_store_index_sorted_case_insensitively(db):
+    """Un nom commençant par une minuscule (ex. "de l'Éclair") doit se
+    classer avec les autres, pas systématiquement en dernier — régression
+    d'un tri SQL sensible à la casse repéré en corrigeant l'affichage de
+    cette page (retour Olivier du 2026-07-13)."""
+    _make_store(db, "ECL", name="Pharmacie de l'Éclair")
+    _make_store(db, "BEL", name="Pharmacie Bellevue")
+    client = _client(db)
+    try:
+        with client as c:
+            resp = c.get("/", headers={"X-Nifty-Public-Gateway": "1"})
+        assert resp.status_code == 200
+        assert resp.text.index(">BEL<") < resp.text.index(">ECL<")
     finally:
         main.app.dependency_overrides.clear()
 

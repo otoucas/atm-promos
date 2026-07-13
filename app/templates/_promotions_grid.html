@@ -1,8 +1,12 @@
 <div class="toolbar">
   <div class="search-wrap">
-    <input type="search" id="promo-search" class="search-box" placeholder="Rechercher une marque…" aria-label="Rechercher une marque" autocomplete="off">
+    <input type="search" id="promo-search" class="search-box" placeholder="Rechercher une marque, un produit ou un code EAN…" aria-label="Rechercher une marque, un produit ou un code EAN" autocomplete="off">
   </div>
-  <div class="zoom-controls">
+  <div class="view-toggle" role="group" aria-label="Mode d'affichage">
+    <button type="button" id="view-tiles-btn" onclick="setViewMode('tiles')" aria-pressed="true">Tuiles</button>
+    <button type="button" id="view-table-btn" onclick="setViewMode('table')" aria-pressed="false">Tableau</button>
+  </div>
+  <div class="zoom-controls" id="zoom-controls">
     <button type="button" onclick="adjustZoom(-20)" aria-label="Réduire">−</button>
     <button type="button" onclick="adjustZoom(20)" aria-label="Agrandir">+</button>
   </div>
@@ -29,15 +33,37 @@
   </form>
   {% endfor %}
 </div>
+
+<div class="table-wrap" id="table-wrap" style="display:none">
+  <table class="admin-table promo-table">
+    <thead>
+      <tr>
+        <th>Marque</th>
+        <th>Produits concernés</th>
+        <th>EAN</th>
+        <th>Valide du</th>
+        <th>Valide au</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for promo in promotions %}
+      <tr class="table-row{% if promo.id in conflict_ids %} conflict{% endif %}" data-brand="{{ promo.display_name|lower }}" data-products="{{ (promo.concerned_products or '')|lower }}" data-eans="{{ promo.product_codes_list|join(',') }}">
+        <td>{% if promo.id in conflict_ids %}<span class="conflict-badge" aria-hidden="true">⚠</span> {% endif %}{{ promo.display_name }}</td>
+        <td>{{ promo.concerned_products or "—" }}</td>
+        <td>{{ promo.product_codes_list|join(', ') or "—" }}</td>
+        <td>{{ promo.valid_from.strftime('%d/%m/%Y') if promo.valid_from else "—" }}</td>
+        <td>{{ promo.valid_until.strftime('%d/%m/%Y') if promo.valid_until else "—" }}</td>
+        <td><button type="button" class="table-generate-btn" onclick="openCodeModal('{{ url_prefix|default('') }}/generate/{{ promo.id }}')">Code</button></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
 <div class="empty-state" id="no-results" style="display:none">Aucun résultat pour « <span id="no-results-query"></span> ».</div>
 {% else %}
 <div class="empty-state">Aucune promotion active pour le moment.</div>
 {% endif %}
-
-<div class="product-search">
-  <div class="product-search-label">Rechercher par produit ou code EAN</div>
-  <input type="search" id="product-search" class="search-box" placeholder="Nom du produit (tolère les fautes) ou EAN exact…" aria-label="Rechercher un produit ou un code EAN" autocomplete="off">
-</div>
 
 <script>
   const grid = document.documentElement;
@@ -51,11 +77,31 @@
     localStorage.setItem('tileSize', next);
   }
 
+  // Vue tuiles/tableau, mémorisée comme le zoom.
+  const gridEl = document.getElementById('grid');
+  const tableWrap = document.getElementById('table-wrap');
+  const zoomControls = document.getElementById('zoom-controls');
+  const tilesBtn = document.getElementById('view-tiles-btn');
+  const tableBtn = document.getElementById('view-table-btn');
+
+  function setViewMode(mode) {
+    const isTable = mode === 'table';
+    if (gridEl) gridEl.style.display = isTable ? 'none' : '';
+    if (tableWrap) tableWrap.style.display = isTable ? '' : 'none';
+    if (zoomControls) zoomControls.style.display = isTable ? 'none' : '';
+    if (tilesBtn) tilesBtn.setAttribute('aria-pressed', String(!isTable));
+    if (tableBtn) tableBtn.setAttribute('aria-pressed', String(isTable));
+    localStorage.setItem('viewMode', mode);
+    applyFilters();
+  }
+  setViewMode(localStorage.getItem('viewMode') || 'tiles');
+
   // Recherche instantanée côté client — la liste est déjà chargée, pas besoin
-  // d'un aller-retour serveur pour filtrer quelques dizaines de tuiles.
-  const brandSearchInput = document.getElementById('promo-search');
-  const productSearchInput = document.getElementById('product-search');
+  // d'un aller-retour serveur pour filtrer quelques dizaines de promotions.
+  // Une seule barre couvre marque, produit et code EAN.
+  const searchInput = document.getElementById('promo-search');
   const tileForms = Array.from(document.querySelectorAll('.tile-form'));
+  const tableRows = Array.from(document.querySelectorAll('.table-row'));
   const noResults = document.getElementById('no-results');
   const noResultsQuery = document.getElementById('no-results-query');
 
@@ -88,7 +134,7 @@
   // Tolérance à la faute d'orthographe : correspondance exacte/sous-chaîne en
   // priorité (rapide), sinon distance de Levenshtein mot à mot avec un seuil
   // qui grandit avec la longueur du mot recherché.
-  function productMatches(query, corpusText) {
+  function textMatches(query, corpusText) {
     const nq = normalize(query.trim());
     if (!nq) return true;
     const corpus = normalize(corpusText || '');
@@ -108,27 +154,29 @@
     return eans.includes(q);
   }
 
+  function itemMatches(query, el) {
+    if (!query) return true;
+    if (isEanQuery(query)) return eanMatches(query, el.dataset.eans);
+    return textMatches(query, el.dataset.brand) || textMatches(query, el.dataset.products);
+  }
+
   function applyFilters() {
-    const brandQuery = brandSearchInput ? brandSearchInput.value.trim().toLowerCase() : '';
-    const productQuery = productSearchInput ? productSearchInput.value.trim() : '';
-    const eanMode = productQuery && isEanQuery(productQuery);
+    const query = searchInput ? searchInput.value.trim() : '';
+    const activeItems = (tableWrap && tableWrap.style.display !== 'none') ? tableRows : tileForms;
     let visibleCount = 0;
     tileForms.forEach(form => {
-      const brandOk = !brandQuery || form.dataset.brand.includes(brandQuery);
-      let productOk = true;
-      if (productQuery) {
-        productOk = eanMode
-          ? eanMatches(productQuery, form.dataset.eans)
-          : (productMatches(productQuery, form.dataset.products) || productMatches(productQuery, form.dataset.brand));
-      }
-      const match = brandOk && productOk;
+      const match = itemMatches(query, form);
       form.style.display = match ? '' : 'none';
-      if (match) visibleCount += 1;
+      if (activeItems === tileForms && match) visibleCount += 1;
+    });
+    tableRows.forEach(row => {
+      const match = itemMatches(query, row);
+      row.style.display = match ? '' : 'none';
+      if (activeItems === tableRows && match) visibleCount += 1;
     });
     if (noResults) {
-      const anyQuery = Boolean(brandQuery || productQuery);
-      noResults.style.display = anyQuery && visibleCount === 0 ? 'block' : 'none';
-      if (noResultsQuery) noResultsQuery.textContent = productQuery || brandSearchInput.value.trim();
+      noResults.style.display = query && visibleCount === 0 ? 'block' : 'none';
+      if (noResultsQuery) noResultsQuery.textContent = query;
     }
   }
 
@@ -142,10 +190,8 @@
     reloadTimer = setTimeout(() => location.reload(), 5 * 60 * 1000);
   }
 
-  if (brandSearchInput) {
-    brandSearchInput.addEventListener('input', () => { applyFilters(); resetReloadTimer(); });
-  }
-  if (productSearchInput) {
-    productSearchInput.addEventListener('input', () => { applyFilters(); resetReloadTimer(); });
+  if (searchInput) {
+    searchInput.addEventListener('input', () => { applyFilters(); resetReloadTimer(); });
+    applyFilters();
   }
 </script>
