@@ -161,6 +161,76 @@ def test_standalone_store_new_promotion_form_requires_login(db):
         main.app.dependency_overrides.clear()
 
 
+def test_manual_promotion_creation_saves_products_and_eans(db):
+    """Retour Olivier du 2026-07-13 (suite) : avant, le formulaire de saisie
+    manuelle ne proposait aucun champ produits/EAN, et rien ne permettait de
+    les ajouter après coup pour une promotion créée à la main (le champ
+    concerned_products n'était éditable que via la file d'attente, que ces
+    promotions ne traversent jamais)."""
+    store = _make_store(db, "LYO")
+    store.contact_email = "contact@hellopharmacie.com"
+    store.password_hash = hash_password("un-bon-mot-de-passe")
+    db.commit()
+
+    client = _client(db)
+    try:
+        with client as c:
+            c.post("/LYO/admin/login", data={"email": store.contact_email, "password": "un-bon-mot-de-passe"})
+            resp = c.post(
+                "/LYO/admin/promotions/new",
+                data={
+                    "brand_name": "Fixodent",
+                    "highco_reference": "https://example.com/ref",
+                    "concerned_products": "Crème adhésive, Poudre",
+                    "product_codes": "3401560123456, 3401560123457",
+                },
+                follow_redirects=False,
+            )
+        assert resp.status_code == 303
+        promo = db.query(Promotion).filter(Promotion.store_id == store.id).one()
+        assert promo.concerned_products == "Crème adhésive, Poudre"
+        assert promo.product_codes == "3401560123456, 3401560123457"
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_edit_products_form_prefills_and_saves(db):
+    store = _make_store(db, "LYO")
+    store.contact_email = "contact@hellopharmacie.com"
+    store.password_hash = hash_password("un-bon-mot-de-passe")
+    promo = Promotion(
+        store_id=store.id, brand_name="Fixodent", highco_reference="ref-a", status=STATUS_ACTIVE,
+        concerned_products="Crème adhésive", product_codes="3401560123456",
+    )
+    db.add(promo)
+    db.commit()
+    db.refresh(promo)
+
+    client = _client(db)
+    try:
+        with client as c:
+            c.post("/LYO/admin/login", data={"email": store.contact_email, "password": "un-bon-mot-de-passe"})
+            form_resp = c.get(f"/LYO/admin/promotions/{promo.id}/products")
+            assert form_resp.status_code == 200
+            # Les valeurs initiales sont injectées côté client via JSON (le champ
+            # est rempli par JS, pas rendu côté serveur) — vérifie la présence du
+            # JSON encodé plutôt que le texte affiché.
+            assert "Cr\\u00e8me adh\\u00e9sive" in form_resp.text
+            assert "3401560123456" in form_resp.text
+
+            save_resp = c.post(
+                f"/LYO/admin/promotions/{promo.id}/products",
+                data={"concerned_products": "Poudre", "product_codes": "3401560999999"},
+                follow_redirects=False,
+            )
+        assert save_resp.status_code == 303
+        db.refresh(promo)
+        assert promo.concerned_products == "Poudre"
+        assert promo.product_codes == "3401560999999"
+    finally:
+        main.app.dependency_overrides.clear()
+
+
 def test_generate_code_rate_limited_after_threshold(db, monkeypatch):
     monkeypatch.setattr(config, "CODE_GENERATION_RATE_LIMIT_COUNT", 2)
     monkeypatch.setattr(highco, "generate_code", lambda ref: "FAKE-CODE")

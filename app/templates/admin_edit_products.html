@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block header %}Produits — {{ promo.brand_name }}{% endblock %}
+{% block header_link %}<a href="{{ url_prefix|default('') }}/admin/promotions">Retour aux promotions</a>{% endblock %}
+{% block content %}
+{% include "admin_nav.html" %}
+
+<script>window.productRowsInitial = {{ initial_rows|tojson }};</script>
+<form class="stacked" method="post" action="{{ url_prefix|default('') }}/admin/promotions/{{ promo.id }}/products">
+  {% include "_product_rows_field.html" %}
+  <button type="submit">Enregistrer</button>
+</form>
+{% endblock %}

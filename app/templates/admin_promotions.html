@@ -13,7 +13,7 @@
 </p>
 <div class="panel">
 <table class="admin-table">
-  <thead><tr><th>Visuel</th><th>Marque</th><th>Montant</th><th>Produits concernés</th><th>Codes produit Winpharma</th><th>Validité</th><th>Source</th><th></th></tr></thead>
+  <thead><tr><th>Visuel</th><th>Marque</th><th>Montant</th><th>Produits / EAN</th><th>Validité</th><th>Source</th><th></th></tr></thead>
   <tbody>
     {% for promo in active %}
     <tr class="{{ 'row-conflict' if promo.id in conflict_ids else '' }}">
@@ -24,12 +24,17 @@
       </td>
       <td>{{ promo.brand_name }}</td>
       <td>{{ promo.operation_label or '—' }}</td>
-      <td>{{ promo.concerned_products or '—' }}</td>
       <td>
-        <form method="post" action="{{ url_prefix|default('') }}/admin/promotions/{{ promo.id }}/product-codes" style="margin:0; display:flex; gap:4px;">
-          <input type="text" name="product_codes" value="{{ promo.product_codes or '' }}" placeholder="ex: 3401560123456, 3401560123457" style="width:160px;">
-          <button type="submit">OK</button>
-        </form>
+        {% if promo.concerned_products or promo.product_codes %}
+          <div class="products-summary">
+          {% for name, ean in promo.product_rows %}
+            <div>{{ name or '—' }}{% if ean %} <span class="muted">({{ ean }})</span>{% endif %}</div>
+          {% endfor %}
+          </div>
+        {% else %}
+          <span class="muted">Aucun produit renseigné</span>
+        {% endif %}
+        <a href="{{ url_prefix|default('') }}/admin/promotions/{{ promo.id }}/products">✎ Modifier</a>
       </td>
       <td>{{ promo.valid_from or '?' }} → {{ promo.valid_until or '?' }}</td>
       <td>{{ promo.source }}</td>

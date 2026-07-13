@@ -13,6 +13,8 @@
   <label for="operation_label">Opération / produit (optionnel)</label>
   <input type="text" id="operation_label" name="operation_label">
 
+  {% include "_product_rows_field.html" %}
+
   <label for="valid_from">Début de validité</label>
   <input type="date" id="valid_from" name="valid_from">
 
@@ -20,7 +22,7 @@
   <input type="date" id="valid_until" name="valid_until">
 
   <label for="qr_file">Image du QR code (photo ou capture d'écran)</label>
-  <input type="file" id="qr_file" name="qr_file" accept="image/*,application/pdf">
+  <input type="file" id="qr_file" name="qr_file" accept="image/*,application/pdf" capture="environment">
 
   <label for="highco_reference">— ou — lien / identifiant HighCo collé directement</label>
   <input type="text" id="highco_reference" name="highco_reference" placeholder="https://...">

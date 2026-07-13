@@ -1,0 +1,125 @@
+<div class="product-rows-field">
+  <label>Produits concernés et leurs EAN</label>
+  <p class="field-hint">Une ligne par produit — l'EAN peut être tapé, collé ou scanné à la caméra.</p>
+  <div id="product-rows-list"></div>
+  <button type="button" id="product-row-add-btn" class="secondary-btn">+ Ajouter un produit</button>
+  <input type="hidden" name="concerned_products" id="concerned_products_hidden">
+  <input type="hidden" name="product_codes" id="product_codes_hidden">
+</div>
+
+<template id="product-row-template">
+  <div class="product-row">
+    <input type="text" class="product-row-name" placeholder="Nom du produit" aria-label="Nom du produit">
+    <input type="text" class="product-row-ean" placeholder="Code EAN" inputmode="numeric" aria-label="Code EAN">
+    <button type="button" class="product-row-scan-btn" title="Scanner le code-barres" aria-label="Scanner le code-barres">📷</button>
+    <button type="button" class="product-row-remove-btn" title="Supprimer cette ligne" aria-label="Supprimer cette ligne">✕</button>
+  </div>
+</template>
+
+<script>
+  (function () {
+    var list = document.getElementById('product-rows-list');
+    var tpl = document.getElementById('product-row-template');
+    var addBtn = document.getElementById('product-row-add-btn');
+    var hiddenNames = document.getElementById('concerned_products_hidden');
+    var hiddenEans = document.getElementById('product_codes_hidden');
+    var form = list.closest('form');
+    var cameraAvailable = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+
+    function addRow(name, ean) {
+      var node = tpl.content.firstElementChild.cloneNode(true);
+      node.querySelector('.product-row-name').value = name || '';
+      node.querySelector('.product-row-ean').value = ean || '';
+      node.querySelector('.product-row-remove-btn').addEventListener('click', function () { node.remove(); });
+      var scanBtn = node.querySelector('.product-row-scan-btn');
+      if (cameraAvailable) {
+        scanBtn.addEventListener('click', function () {
+          if (window.niftyScanEan) window.niftyScanEan(node.querySelector('.product-row-ean'));
+        });
+      } else {
+        scanBtn.style.display = 'none';
+      }
+      list.appendChild(node);
+    }
+
+    addBtn.addEventListener('click', function () { addRow('', ''); });
+
+    var initial = window.productRowsInitial || [];
+    if (initial.length === 0) initial = [['', '']];
+    initial.forEach(function (pair) { addRow(pair[0], pair[1]); });
+    window.productRowsInitial = null; // ne sert qu'à l'initialisation de cette page
+
+    if (form) {
+      form.addEventListener('submit', function () {
+        var names = [];
+        var eans = [];
+        list.querySelectorAll('.product-row').forEach(function (row) {
+          var n = row.querySelector('.product-row-name').value.trim();
+          var e = row.querySelector('.product-row-ean').value.trim();
+          if (n) names.push(n);
+          if (e) eans.push(e);
+        });
+        hiddenNames.value = names.join(', ');
+        hiddenEans.value = eans.join(', ');
+      });
+    }
+  })();
+</script>
+
+<script src="{{ mount_prefix|default('') }}/static/vendor/zxing-library.min.js"></script>
+<script>
+  // Scan EAN à la caméra (ZXing, auto-hébergé — voir app/static/vendor/README.md).
+  // Une seule instance de lecteur/modale pour toute la page, même si plusieurs
+  // lignes produit ont chacune leur bouton "Scanner".
+  (function () {
+    var reader = null;
+    var controls = null;
+    var modal = null;
+    var videoEl = null;
+    var statusEl = null;
+
+    function ensureModal() {
+      if (modal) return;
+      modal = document.createElement('div');
+      modal.className = 'lightbox scan-modal';
+      modal.innerHTML =
+        '<div class="scan-modal-card">' +
+        '<video class="scan-video" autoplay playsinline muted></video>' +
+        '<div class="scan-status">Visez le code-barres…</div>' +
+        '<button type="button" class="scan-close-btn">Annuler</button>' +
+        '</div>';
+      document.body.appendChild(modal);
+      videoEl = modal.querySelector('.scan-video');
+      statusEl = modal.querySelector('.scan-status');
+      modal.querySelector('.scan-close-btn').addEventListener('click', closeScan);
+      modal.addEventListener('click', function (e) { if (e.target === modal) closeScan(); });
+    }
+
+    function closeScan() {
+      if (controls) { controls.stop(); controls = null; }
+      if (modal) modal.classList.remove('open');
+    }
+
+    window.niftyScanEan = function (inputEl) {
+      if (typeof ZXing === 'undefined') {
+        statusEl && (statusEl.textContent = 'Lecteur indisponible.');
+        return;
+      }
+      ensureModal();
+      statusEl.textContent = 'Visez le code-barres…';
+      modal.classList.add('open');
+      if (!reader) reader = new ZXing.BrowserMultiFormatReader();
+      reader
+        .decodeFromConstraints({ video: { facingMode: 'environment' } }, videoEl, function (result) {
+          if (result) {
+            inputEl.value = result.getText();
+            closeScan();
+          }
+        })
+        .then(function (ctrl) { controls = ctrl; })
+        .catch(function () {
+          statusEl.textContent = 'Caméra indisponible ou accès refusé.';
+        });
+    };
+  })();
+</script>

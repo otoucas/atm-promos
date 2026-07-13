@@ -732,33 +732,67 @@ async def admin_replace_logo_legacy(
     return await _admin_replace_logo_response(promotion_id, request, db, store, logo)
 
 
-async def _admin_set_product_codes_response(promotion_id: int, request: Request, db: Session, store: Store):
-    """Lets the pharmacist attach the Winpharma product code(s) (CodeProduit)
-    that a promotion actually covers — the join key the future Winpharma
-    export relies on, since concerned_products is only a free-text label
-    mined from the promo email and can't be matched automatically."""
+def _admin_edit_products_form_response(promotion_id: int, request: Request, db: Session, store: Store):
+    _require_store_admin(request, store)
+    promo = db.query(Promotion).filter(Promotion.id == promotion_id, Promotion.store_id == store.id).first()
+    if not promo:
+        raise HTTPException(status_code=404)
+    return templates.TemplateResponse(
+        "admin_edit_products.html",
+        {
+            "request": request, "mount_prefix": _mount_prefix(request),
+            "promo": promo,
+            "initial_rows": promo.product_rows,
+            "url_prefix": f"{_store_url_prefix(request, store)}",
+            "store": store,
+        },
+    )
+
+
+@app.get("/{code}/admin/promotions/{promotion_id}/products", response_class=HTMLResponse)
+def admin_edit_products_form_for_store(
+    promotion_id: int, request: Request, db: Session = Depends(get_db), store: Store = Depends(get_store_for_admin_by_code)
+):
+    return _admin_edit_products_form_response(promotion_id, request, db, store)
+
+
+@app.get("/admin/promotions/{promotion_id}/products", response_class=HTMLResponse)
+def admin_edit_products_form_legacy(
+    promotion_id: int, request: Request, db: Session = Depends(get_db), store: Store = Depends(get_default_store)
+):
+    return _admin_edit_products_form_response(promotion_id, request, db, store)
+
+
+async def _admin_save_products_response(promotion_id: int, request: Request, db: Session, store: Store):
+    """Attache les produits concernés et leurs EAN à une promotion — que ce
+    soit celle-ci ou l'export LGO (voir Promotion.product_rows) qui s'appuie
+    sur ces deux champs texte, désormais éditables ensemble (avant le
+    2026-07-13, seul l'EAN était modifiable après création, et
+    concerned_products n'était accessible que pour les promotions arrivées
+    par email — jamais pour celles saisies à la main)."""
     _require_store_admin(request, store)
     form = await request.form()
     promo = db.query(Promotion).filter(Promotion.id == promotion_id, Promotion.store_id == store.id).first()
     if not promo:
         raise HTTPException(status_code=404)
+    promo.concerned_products = (form.get("concerned_products") or "").strip() or None
     promo.product_codes = (form.get("product_codes") or "").strip() or None
     db.commit()
     return RedirectResponse(f"{_store_url_prefix(request, store)}/admin/promotions", status_code=303)
 
 
-@app.post("/{code}/admin/promotions/{promotion_id}/product-codes")
-async def admin_set_product_codes_for_store(
+@app.post("/{code}/admin/promotions/{promotion_id}/products")
+async def admin_save_products_for_store(
     promotion_id: int, request: Request, db: Session = Depends(get_db), store: Store = Depends(get_store_for_admin_by_code)
 ):
-    return await _admin_set_product_codes_response(promotion_id, request, db, store)
+    return await _admin_save_products_response(promotion_id, request, db, store)
 
 
-@app.post("/admin/promotions/{promotion_id}/product-codes")
-async def admin_set_product_codes_legacy(
+@app.post("/admin/promotions/{promotion_id}/products")
+async def admin_save_products_legacy(
     promotion_id: int, request: Request, db: Session = Depends(get_db), store: Store = Depends(get_default_store)
 ):
-    return await _admin_set_product_codes_response(promotion_id, request, db, store)
+    return await _admin_save_products_response(promotion_id, request, db, store)
 
 
 def _admin_new_promotion_form_response(request: Request, store: Store):
@@ -788,6 +822,8 @@ async def _admin_new_promotion_response(
     valid_until: str,
     highco_reference: str,
     qr_file: UploadFile | None,
+    concerned_products: str = "",
+    product_codes: str = "",
 ):
     _require_store_admin(request, store)
 
@@ -815,6 +851,8 @@ async def _admin_new_promotion_response(
         brand_name=brand_name.strip(),
         operation_label=operation_label.strip() or None,
         highco_reference=reference,
+        concerned_products=concerned_products.strip() or None,
+        product_codes=product_codes.strip() or None,
         valid_from=datetime.date.fromisoformat(valid_from) if valid_from else None,
         valid_until=datetime.date.fromisoformat(valid_until) if valid_until else None,
         status=STATUS_ACTIVE,
@@ -838,9 +876,12 @@ async def admin_new_promotion_for_store(
     valid_until: str = Form(""),
     highco_reference: str = Form(""),
     qr_file: UploadFile = File(None),
+    concerned_products: str = Form(""),
+    product_codes: str = Form(""),
 ):
     return await _admin_new_promotion_response(
-        request, db, store, brand_name, operation_label, valid_from, valid_until, highco_reference, qr_file
+        request, db, store, brand_name, operation_label, valid_from, valid_until, highco_reference, qr_file,
+        concerned_products, product_codes,
     )
 
 
@@ -855,9 +896,12 @@ async def admin_new_promotion_legacy(
     valid_until: str = Form(""),
     highco_reference: str = Form(""),
     qr_file: UploadFile = File(None),
+    concerned_products: str = Form(""),
+    product_codes: str = Form(""),
 ):
     return await _admin_new_promotion_response(
-        request, db, store, brand_name, operation_label, valid_from, valid_until, highco_reference, qr_file
+        request, db, store, brand_name, operation_label, valid_from, valid_until, highco_reference, qr_file,
+        concerned_products, product_codes,
     )
 
 
