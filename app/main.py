@@ -41,6 +41,7 @@ from .qrcode_utils import extract_qr_payload
 from .store_requests import (
     build_contact_email,
     generate_verification_token,
+    send_dev_suggestion,
     send_duplicate_code_alert,
     send_password_reset_email,
     send_suspicious_request_alert,
@@ -1043,6 +1044,52 @@ def admin_mcp_clear_logs_for_store(request: Request, db: Session = Depends(get_d
 @app.post("/admin/mcp/log/clear")
 def admin_mcp_clear_logs_legacy(request: Request, db: Session = Depends(get_db), store: Store = Depends(get_default_store)):
     return _admin_mcp_clear_logs_response(request, db, store)
+
+
+def _admin_help_response(request: Request, store: Store):
+    _require_store_admin(request, store)
+    return templates.TemplateResponse(
+        "admin_help.html",
+        {
+            "request": request, "mount_prefix": _mount_prefix(request),
+            "url_prefix": f"{_store_url_prefix(request, store)}",
+            "store": store,
+            "flash": request.query_params.get("flash"),
+        },
+    )
+
+
+@app.get("/{code}/admin/help", response_class=HTMLResponse)
+def admin_help_for_store(request: Request, store: Store = Depends(get_store_for_admin_by_code)):
+    return _admin_help_response(request, store)
+
+
+@app.get("/admin/help", response_class=HTMLResponse)
+def admin_help_legacy(request: Request, store: Store = Depends(get_default_store)):
+    return _admin_help_response(request, store)
+
+
+async def _admin_help_suggestion_response(request: Request, store: Store):
+    _require_store_admin(request, store)
+    form = await request.form()
+    message = (form.get("message") or "").strip()
+    if not message:
+        return RedirectResponse(
+            f"{_store_url_prefix(request, store)}/admin/help?flash=Message vide — rien n'a été envoyé.", status_code=303
+        )
+    sent = send_dev_suggestion(store, message)
+    flash = "Suggestion envoyée, merci !" if sent else "Échec de l'envoi — réessayez plus tard ou contactez le groupement directement."
+    return RedirectResponse(f"{_store_url_prefix(request, store)}/admin/help?flash={flash}", status_code=303)
+
+
+@app.post("/{code}/admin/help/suggestion")
+async def admin_help_suggestion_for_store(request: Request, store: Store = Depends(get_store_for_admin_by_code)):
+    return await _admin_help_suggestion_response(request, store)
+
+
+@app.post("/admin/help/suggestion")
+async def admin_help_suggestion_legacy(request: Request, store: Store = Depends(get_default_store)):
+    return await _admin_help_suggestion_response(request, store)
 
 
 def _admin_poll_now_response(request: Request, db: Session, store: Store):

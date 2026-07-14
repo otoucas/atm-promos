@@ -161,6 +161,59 @@ def test_standalone_store_new_promotion_form_requires_login(db):
         main.app.dependency_overrides.clear()
 
 
+def test_help_page_shows_guide_and_requires_login(db):
+    store = _make_store(db, "LYO")
+    client = _client(db)
+    try:
+        with client as c:
+            anon_resp = c.get("/LYO/admin/help", follow_redirects=False)
+        assert anon_resp.status_code == 307
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_help_suggestion_sends_email_and_flashes(db, monkeypatch):
+    sent = []
+    monkeypatch.setattr(main, "send_dev_suggestion", lambda store, message: sent.append((store.code, message)) or True)
+    store = _make_store(db, "LYO")
+    store.contact_email = "contact@hellopharmacie.com"
+    store.password_hash = hash_password("un-bon-mot-de-passe")
+    db.commit()
+
+    client = _client(db)
+    try:
+        with client as c:
+            c.post("/LYO/admin/login", data={"email": store.contact_email, "password": "un-bon-mot-de-passe"})
+            resp = c.post(
+                "/LYO/admin/help/suggestion",
+                data={"message": "Ce serait bien d'avoir un filtre par date."},
+                follow_redirects=False,
+            )
+        assert resp.status_code == 303
+        assert "flash=Suggestion" in resp.headers["location"]
+        assert sent == [("LYO", "Ce serait bien d'avoir un filtre par date.")]
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_help_suggestion_rejects_empty_message(db, monkeypatch):
+    monkeypatch.setattr(main, "send_dev_suggestion", lambda store, message: True)
+    store = _make_store(db, "LYO")
+    store.contact_email = "contact@hellopharmacie.com"
+    store.password_hash = hash_password("un-bon-mot-de-passe")
+    db.commit()
+
+    client = _client(db)
+    try:
+        with client as c:
+            c.post("/LYO/admin/login", data={"email": store.contact_email, "password": "un-bon-mot-de-passe"})
+            resp = c.post("/LYO/admin/help/suggestion", data={"message": "   "}, follow_redirects=False)
+        assert resp.status_code == 303
+        assert "vide" in resp.headers["location"]
+    finally:
+        main.app.dependency_overrides.clear()
+
+
 def test_manual_promotion_creation_saves_products_and_eans(db):
     """Retour Olivier du 2026-07-13 (suite) : avant, le formulaire de saisie
     manuelle ne proposait aucun champ produits/EAN, et rien ne permettait de

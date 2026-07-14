@@ -110,6 +110,26 @@ def send_suspicious_request_alert(code: str, name: str, contact_email: str, reas
         return False
 
 
+def send_dev_suggestion(store, message: str) -> bool:
+    """Envoie une suggestion de développement laissée par un point de vente
+    depuis la page d'aide (/{code}/admin/help) — même adresse que les autres
+    alertes (config.STORE_ALERT_RECIPIENT), pas de nouvelle boîte dédiée."""
+    if not config.STORE_ALERT_RECIPIENT:
+        logger.warning("STORE_ALERT_RECIPIENT non configuré — suggestion de %s non envoyée", store.code)
+        return False
+    subject = f"[ATM Nifty] Suggestion de « {store.name} » ({store.code})"
+    body = (
+        f"Suggestion envoyée depuis la page d'aide par « {store.name} » (sigle {store.code}, "
+        f"contact : {store.contact_email or '(aucun)'}) :\n\n{message}"
+    )
+    try:
+        _send_email(subject, body, config.STORE_ALERT_RECIPIENT)
+        return True
+    except Exception:
+        logger.exception("Échec de l'envoi de la suggestion de développement pour %s", store.code)
+        return False
+
+
 def send_duplicate_code_alert(code: str, existing_store, requested_contact_email: str) -> bool:
     """Le sigle demandé existe déjà (actif ou en attente de confirmation),
     éventuellement avec un contact différent — alerte Olivier plutôt que de

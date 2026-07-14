@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block header %}Aide{% endblock %}
+{% block header_link %}<a href="{{ url_prefix|default('') }}/">Retour à la grille</a>{% endblock %}
+{% block content %}
+{% include "admin_nav.html" %}
+
+{% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+
+<div class="panel" style="padding:20px; margin-bottom:20px;">
+  <h3 style="margin-top:0;">Mode d'emploi des fonctions avancées</h3>
+
+  <h4>Rechercher une promotion</h4>
+  <p style="color:var(--muted); font-size:0.9rem;">
+    Une seule barre de recherche en haut de la grille : elle trouve à la fois une marque, un nom de produit et un code EAN. Les fautes de frappe sont tolérées pour les marques et les produits (« fixodnt » trouve « Fixodent »). Pour un EAN, tapez le code complet — la correspondance est exacte.
+  </p>
+
+  <h4>Vue tuiles / tableau</h4>
+  <p style="color:var(--muted); font-size:0.9rem;">
+    À côté de la recherche, un bouton bascule entre l'affichage en tuiles (comme au comptoir) et un tableau détaillé. Dans le tableau, chaque produit d'une promotion a sa propre ligne avec son EAN, et un clic sur n'importe quel en-tête de colonne trie la liste (marque, promotion, produit, EAN, dates) — un second clic inverse l'ordre.
+  </p>
+
+  <h4>Ajouter une promotion à la main</h4>
+  <p style="color:var(--muted); font-size:0.9rem;">
+    Depuis « + Ajouter manuellement » : marque, opération, dates, puis la liste des produits concernés avec leur EAN (une ligne par produit, « + Ajouter un produit » pour en ajouter d'autres). Chaque EAN peut être tapé, collé, ou rempli automatiquement en appuyant sur 📷 pour scanner le code-barres à la caméra. Pour le QR code HighCo, le champ d'upload ouvre directement l'appareil photo sur mobile.
+  </p>
+
+  <h4>Modifier les produits d'une promotion existante</h4>
+  <p style="color:var(--muted); font-size:0.9rem;">
+    Depuis « Promotions », le lien « ✎ Modifier » sur chaque ligne ouvre le même écran produits/EAN que la création, déjà rempli — pratique pour compléter une promotion arrivée par email sans tous ses EAN.
+  </p>
+
+  <h4>Exports pour la caisse</h4>
+  <p style="color:var(--muted); font-size:0.9rem;">
+    Depuis « Promotions », deux fichiers téléchargeables : un export CSV complet (une ligne par promotion, pour une saisie manuelle dans Winpharma) et un export EAN (une ligne par code-barres, pour un import direct dans le logiciel de caisse).
+  </p>
+
+  <h4>Connexion IA (MCP)</h4>
+  <p style="color:var(--muted); font-size:0.9rem;">
+    Permet de connecter votre propre assistant IA (Claude ou autre) pour lire et proposer des promotions à votre place. Détails et jeton de connexion sur la page « Connexion IA (MCP) ».
+  </p>
+</div>
+
+<div class="panel" style="padding:20px;">
+  <h3 style="margin-top:0;">Proposer une amélioration</h3>
+  <p style="color:var(--muted); font-size:0.9rem;">
+    Une idée, un bug, un besoin non couvert ? Décrivez-le ci-dessous, ça part directement au groupement.
+  </p>
+  <form class="stacked" method="post" action="{{ url_prefix|default('') }}/admin/help/suggestion">
+    <label for="suggestion-message">Votre suggestion</label>
+    <textarea id="suggestion-message" name="message" rows="5" required placeholder="Décrivez votre idée ou le problème rencontré…"></textarea>
+    <button type="submit">Envoyer</button>
+  </form>
+</div>
+{% endblock %}

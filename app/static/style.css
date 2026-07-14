@@ -421,15 +421,17 @@ main {
 
 form.stacked { display: flex; flex-direction: column; gap: 14px; max-width: 480px; }
 form.stacked label { font-size: 0.85rem; color: var(--muted); font-weight: 600; }
-form.stacked input, form.stacked select {
+form.stacked input, form.stacked select, form.stacked textarea {
   padding: 11px 12px;
   border: 1px solid var(--border);
   border-radius: 10px;
   font-size: 1rem;
   background: var(--card-bg);
   color: var(--text);
+  font-family: inherit;
+  resize: vertical;
 }
-form.stacked input:focus, form.stacked select:focus {
+form.stacked input:focus, form.stacked select:focus, form.stacked textarea:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
