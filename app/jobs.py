@@ -1,9 +1,10 @@
 import datetime
 import logging
 
+from . import config
 from .database import SessionLocal
 from .gmail_poller import poll_gmail_once
-from .models import STATUS_ACTIVE, STATUS_ARCHIVED, STATUS_PENDING, Promotion
+from .models import STATUS_ACTIVE, STATUS_ARCHIVED, STATUS_PENDING, Promotion, Store
 
 logger = logging.getLogger("jobs")
 
@@ -105,6 +106,75 @@ def run_daily_review():
             )
     except Exception:
         logger.exception("Échec de la revue quotidienne")
+    finally:
+        db.close()
+
+
+def _due(target_date: datetime.date | None, today: datetime.date, days_before: int) -> bool:
+    """Vrai si target_date tombe dans la fenêtre de rappel [aujourd'hui ;
+    aujourd'hui + days_before] — la borne basse évite de rappeler une échéance
+    déjà passée après une coupure prolongée du service."""
+    if target_date is None:
+        return False
+    delta = (target_date - today).days
+    return 0 <= delta <= days_before
+
+
+def _reminder_body(promo: Promotion, store: Store, event: str, event_date: datetime.date) -> str:
+    verb = "démarre" if event == "start" else "se termine"
+    body = f"La promotion « {promo.display_name} » de {store.name} {verb} le {event_date.strftime('%d/%m/%Y')}."
+    if config.PUBLIC_BASE_URL:
+        body += f"\n\nRetrouvez-la dans vos promotions : {config.PUBLIC_BASE_URL}/{store.code}/admin/promotions"
+    return body
+
+
+def _send_reminder(send_email, store: Store, promo: Promotion, event: str, event_date: datetime.date) -> bool:
+    verb = "démarre" if event == "start" else "se termine"
+    subject = f"[Nifty] « {promo.display_name} » {verb} bientôt"
+    try:
+        send_email(subject, _reminder_body(promo, store, event, event_date), store.notification_email)
+        return True
+    except Exception:
+        logger.exception("Échec du rappel de %s pour %s / promo %s", event, store.code, promo.id)
+        return False
+
+
+def run_promo_notifications():
+    """Rappels par email paramétrables par point de vente (toggle + délais,
+    voir Store.notifications_enabled et /{code}/admin/notifications) : un
+    envoi J-X avant le début et J-X avant la fin d'une campagne active. Chaque
+    échéance n'est signalée qu'une seule fois, grâce aux horodatages
+    start_reminder_sent_at / end_reminder_sent_at sur la promotion elle-même
+    (demande Olivier du 2026-07-14)."""
+    from .store_requests import _send_email
+
+    db = SessionLocal()
+    try:
+        today = datetime.date.today()
+        stores = db.query(Store).filter(Store.notifications_enabled.is_(True)).all()
+        sent = 0
+        for store in stores:
+            if not store.notification_email:
+                continue
+            promos = (
+                db.query(Promotion)
+                .filter(Promotion.store_id == store.id, Promotion.status == STATUS_ACTIVE)
+                .all()
+            )
+            for promo in promos:
+                if not promo.start_reminder_sent_at and _due(promo.valid_from, today, store.notify_days_before_start):
+                    if _send_reminder(_send_email, store, promo, "start", promo.valid_from):
+                        promo.start_reminder_sent_at = datetime.datetime.utcnow()
+                        sent += 1
+                if not promo.end_reminder_sent_at and _due(promo.valid_until, today, store.notify_days_before_end):
+                    if _send_reminder(_send_email, store, promo, "end", promo.valid_until):
+                        promo.end_reminder_sent_at = datetime.datetime.utcnow()
+                        sent += 1
+        if sent:
+            db.commit()
+            logger.info("%d email(s) de rappel de campagne envoyé(s)", sent)
+    except Exception:
+        logger.exception("Échec des notifications de campagne")
     finally:
         db.close()
 

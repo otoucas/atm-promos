@@ -35,6 +35,11 @@ ARCHIVE_CHECK_INTERVAL_MINUTES = int(os.environ.get("ARCHIVE_CHECK_INTERVAL_MINU
 # summary of what's visible/upcoming — in addition to the hourly safety net above.
 DAILY_REVIEW_HOUR = int(os.environ.get("DAILY_REVIEW_HOUR", "6"))
 
+# Rappels de campagne par email (voir jobs.run_promo_notifications) — un cran
+# après la revue quotidienne, pour que l'archivage/la synchro du matin soit
+# déjà passé quand les rappels sortent.
+PROMO_NOTIFICATIONS_HOUR = int(os.environ.get("PROMO_NOTIFICATIONS_HOUR", "8"))
+
 DISABLE_GMAIL_POLLER = os.environ.get("DISABLE_GMAIL_POLLER", "0") == "1"
 
 # Rappel mensuel (e-mail) des promotions Nifty à préparer pour le mois

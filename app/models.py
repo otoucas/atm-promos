@@ -61,6 +61,16 @@ class Store(Base):
     mcp_token = Column(String(64), nullable=True, unique=True, index=True)
     mcp_auto_publish = Column(Boolean, nullable=False, default=False)
 
+    # Rappels par email avant le début/la fin d'une campagne, paramétrables par
+    # point de vente (/{code}/admin/notifications) — demande Olivier du
+    # 2026-07-14. notification_email est distinct de contact_email (qui sert à
+    # la connexion) : un magasin sans contact_email (Artemare) peut quand même
+    # activer les rappels avec une adresse de son choix.
+    notifications_enabled = Column(Boolean, nullable=False, default=False)
+    notification_email = Column(String(255), nullable=True)
+    notify_days_before_start = Column(Integer, nullable=False, default=3)
+    notify_days_before_end = Column(Integer, nullable=False, default=3)
+
     promotions = relationship("Promotion", back_populates="store")
     mcp_activity_logs = relationship(
         "McpActivityLog", back_populates="store", cascade="all, delete-orphan"
@@ -88,6 +98,11 @@ class Promotion(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     validated_at = Column(DateTime, nullable=True)
     archived_at = Column(DateTime, nullable=True)
+
+    # Marque le moment d'envoi d'un rappel (voir jobs.run_promo_notifications)
+    # pour ne jamais en renvoyer deux fois pour la même échéance.
+    start_reminder_sent_at = Column(DateTime, nullable=True)
+    end_reminder_sent_at = Column(DateTime, nullable=True)
 
     store = relationship("Store", back_populates="promotions")
     generated_codes = relationship("GeneratedCode", back_populates="promotion")

@@ -214,6 +214,109 @@ def test_help_suggestion_rejects_empty_message(db, monkeypatch):
         main.app.dependency_overrides.clear()
 
 
+def test_notifications_settings_requires_login(db):
+    store = _make_store(db, "LYO")
+    client = _client(db)
+    try:
+        with client as c:
+            resp = c.get("/LYO/admin/notifications", follow_redirects=False)
+        assert resp.status_code == 307
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_notifications_settings_save_and_validation(db):
+    """Demande Olivier du 2026-07-14 : rappels par email J-X avant le début
+    et J-X avant la fin d'une campagne, paramétrables par point de vente."""
+    store = _make_store(db, "LYO")
+    store.contact_email = "contact@hellopharmacie.com"
+    store.password_hash = hash_password("un-bon-mot-de-passe")
+    db.commit()
+
+    client = _client(db)
+    try:
+        with client as c:
+            c.post("/LYO/admin/login", data={"email": store.contact_email, "password": "un-bon-mot-de-passe"})
+
+            resp = c.post(
+                "/LYO/admin/notifications",
+                data={"enabled": "true", "notification_email": "", "days_before_start": "3", "days_before_end": "5"},
+            )
+            assert resp.status_code == 200
+            assert "nécessaire" in resp.text
+
+            resp = c.post(
+                "/LYO/admin/notifications",
+                data={"notification_email": "a@hellopharmacie.com", "days_before_start": "-1", "days_before_end": "5"},
+            )
+            assert resp.status_code == 200
+            assert "positif" in resp.text
+
+            resp = c.post(
+                "/LYO/admin/notifications",
+                data={"enabled": "true", "notification_email": "a@hellopharmacie.com", "days_before_start": "2", "days_before_end": "7"},
+                follow_redirects=False,
+            )
+            assert resp.status_code == 303
+        db.refresh(store)
+        assert store.notifications_enabled is True
+        assert store.notification_email == "a@hellopharmacie.com"
+        assert store.notify_days_before_start == 2
+        assert store.notify_days_before_end == 7
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_run_promo_notifications_sends_once_per_deadline(db, monkeypatch):
+    import datetime as dt
+
+    from app import jobs, store_requests
+
+    sent = []
+    monkeypatch.setattr(store_requests, "_send_email", lambda subject, body, to: sent.append((subject, to)))
+
+    store = _make_store(db, "LYO")
+    store.notifications_enabled = True
+    store.notification_email = "a@hellopharmacie.com"
+    store.notify_days_before_start = 3
+    store.notify_days_before_end = 2
+    db.commit()
+
+    today = dt.date.today()
+    starting_soon = Promotion(
+        store_id=store.id, brand_name="Fixodent", highco_reference="ref-a", status=STATUS_ACTIVE,
+        valid_from=today + dt.timedelta(days=2), valid_until=today + dt.timedelta(days=30),
+    )
+    ending_soon = Promotion(
+        store_id=store.id, brand_name="Sensodyne", highco_reference="ref-b", status=STATUS_ACTIVE,
+        valid_from=today - dt.timedelta(days=10), valid_until=today + dt.timedelta(days=1),
+    )
+    not_due = Promotion(
+        store_id=store.id, brand_name="Elgydium", highco_reference="ref-c", status=STATUS_ACTIVE,
+        valid_from=today + dt.timedelta(days=20), valid_until=today + dt.timedelta(days=40),
+    )
+    db.add_all([starting_soon, ending_soon, not_due])
+    db.commit()
+    db.refresh(starting_soon)
+    db.refresh(ending_soon)
+    db.refresh(not_due)
+
+    jobs.run_promo_notifications()
+
+    db.refresh(starting_soon)
+    db.refresh(ending_soon)
+    db.refresh(not_due)
+    assert starting_soon.start_reminder_sent_at is not None
+    assert ending_soon.end_reminder_sent_at is not None
+    assert not_due.start_reminder_sent_at is None
+    assert not_due.end_reminder_sent_at is None
+    assert len(sent) == 2
+
+    sent.clear()
+    jobs.run_promo_notifications()
+    assert sent == []  # déjà notifiées, aucun renvoi
+
+
 def test_manual_promotion_creation_saves_products_and_eans(db):
     """Retour Olivier du 2026-07-13 (suite) : avant, le formulaire de saisie
     manuelle ne proposait aucun champ produits/EAN, et rien ne permettait de

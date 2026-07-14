@@ -3,6 +3,7 @@
   <a href="{{ url_prefix|default('') }}/admin/pending">En attente</a>
   <a href="{{ url_prefix|default('') }}/admin/promotions/new">+ Ajouter manuellement</a>
   <a href="{{ url_prefix|default('') }}/admin/history">Historique</a>
+  <a href="{{ url_prefix|default('') }}/admin/notifications">Notifications</a>
   <a href="{{ url_prefix|default('') }}/admin/mcp">Connexion IA (MCP)</a>
   {% if store and store.integration == 'erpnext' %}
   <form method="post" action="{{ url_prefix }}/admin/poll-now" class="gmail-poll-form" style="margin:0;">

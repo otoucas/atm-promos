@@ -20,7 +20,14 @@ from .auth import check_password, hash_password, is_admin, verify_store_password
 from .brands import apply_brand_logo, apply_brand_logo_to_all_matching, find_brand
 from .database import get_db, init_db
 from .gmail_poller import poll_gmail_once
-from .jobs import run_auto_archive, run_daily_review, run_erpnext_pull, run_erpnext_sync, run_gmail_poll
+from .jobs import (
+    run_auto_archive,
+    run_daily_review,
+    run_erpnext_pull,
+    run_erpnext_sync,
+    run_gmail_poll,
+    run_promo_notifications,
+)
 from .monthly_preview import run_monthly_preview
 from .logos import fetch_logo_url
 from .models import (
@@ -80,6 +87,9 @@ def on_startup():
     scheduler.add_job(run_auto_archive, "interval", minutes=config.ARCHIVE_CHECK_INTERVAL_MINUTES, id="auto_archive")
     scheduler.add_job(
         run_daily_review, CronTrigger(hour=config.DAILY_REVIEW_HOUR, minute=0), id="daily_review"
+    )
+    scheduler.add_job(
+        run_promo_notifications, CronTrigger(hour=config.PROMO_NOTIFICATIONS_HOUR, minute=0), id="promo_notifications"
     )
     scheduler.add_job(
         run_monthly_preview,
@@ -996,6 +1006,89 @@ def admin_history_for_store(request: Request, db: Session = Depends(get_db), sto
 @app.get("/admin/history", response_class=HTMLResponse)
 def admin_history_legacy(request: Request, db: Session = Depends(get_db), store: Store = Depends(get_default_store)):
     return _admin_history_response(request, db, store)
+
+
+# ---------------------------------------------------------------------------
+# Rappels de campagne par email, paramétrables par magasin (toggle + délais en
+# jours avant le début/la fin d'une promotion active) — voir
+# jobs.run_promo_notifications pour l'envoi effectif.
+# ---------------------------------------------------------------------------
+
+
+def _admin_notifications_response(request: Request, store: Store, error: str | None = None):
+    _require_store_admin(request, store)
+    return templates.TemplateResponse(
+        "admin_notifications.html",
+        {
+            "request": request,
+            "mount_prefix": _mount_prefix(request),
+            "url_prefix": f"{_store_url_prefix(request, store)}",
+            "store": store,
+            "flash": request.query_params.get("flash"),
+            "error": error,
+        },
+    )
+
+
+@app.get("/{code}/admin/notifications", response_class=HTMLResponse)
+def admin_notifications_for_store(request: Request, store: Store = Depends(get_store_for_admin_by_code)):
+    return _admin_notifications_response(request, store)
+
+
+@app.get("/admin/notifications", response_class=HTMLResponse)
+def admin_notifications_legacy(request: Request, store: Store = Depends(get_default_store)):
+    return _admin_notifications_response(request, store)
+
+
+def _admin_save_notifications_response(
+    request: Request, db: Session, store: Store, enabled: bool, notification_email: str, days_before_start: str, days_before_end: str
+):
+    _require_store_admin(request, store)
+    email = notification_email.strip()
+
+    if enabled and not email:
+        return _admin_notifications_response(request, store, error="Une adresse email est nécessaire pour activer les rappels.")
+
+    try:
+        start_days = int(days_before_start)
+        end_days = int(days_before_end)
+        if start_days < 0 or end_days < 0:
+            raise ValueError
+    except ValueError:
+        return _admin_notifications_response(request, store, error="Le nombre de jours doit être un entier positif.")
+
+    store.notifications_enabled = enabled
+    store.notification_email = email or None
+    store.notify_days_before_start = start_days
+    store.notify_days_before_end = end_days
+    db.commit()
+    return RedirectResponse(f"{_store_url_prefix(request, store)}/admin/notifications?flash=Préférences enregistrées.", status_code=303)
+
+
+@app.post("/{code}/admin/notifications", response_class=HTMLResponse)
+def admin_save_notifications_for_store(
+    request: Request,
+    db: Session = Depends(get_db),
+    store: Store = Depends(get_store_for_admin_by_code),
+    enabled: bool = Form(False),
+    notification_email: str = Form(""),
+    days_before_start: str = Form("3"),
+    days_before_end: str = Form("3"),
+):
+    return _admin_save_notifications_response(request, db, store, enabled, notification_email, days_before_start, days_before_end)
+
+
+@app.post("/admin/notifications", response_class=HTMLResponse)
+def admin_save_notifications_legacy(
+    request: Request,
+    db: Session = Depends(get_db),
+    store: Store = Depends(get_default_store),
+    enabled: bool = Form(False),
+    notification_email: str = Form(""),
+    days_before_start: str = Form("3"),
+    days_before_end: str = Form("3"),
+):
+    return _admin_save_notifications_response(request, db, store, enabled, notification_email, days_before_start, days_before_end)
 
 
 # ---------------------------------------------------------------------------

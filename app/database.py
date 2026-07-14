@@ -49,6 +49,20 @@ def _ensure_store_contact_columns():
             "password_reset_requested_at": "DATETIME",
             "mcp_token": "VARCHAR(64)",
             "mcp_auto_publish": "BOOLEAN DEFAULT 0",
+            "notifications_enabled": "BOOLEAN DEFAULT 0",
+            "notification_email": "VARCHAR(255)",
+            "notify_days_before_start": "INTEGER DEFAULT 3",
+            "notify_days_before_end": "INTEGER DEFAULT 3",
+        },
+    )
+
+
+def _ensure_promotion_reminder_columns():
+    _ensure_columns(
+        "promotions",
+        {
+            "start_reminder_sent_at": "DATETIME",
+            "end_reminder_sent_at": "DATETIME",
         },
     )
 
@@ -80,4 +94,5 @@ def init_db():
     Base.metadata.create_all(bind=engine)
     _ensure_store_id_column()
     _ensure_store_contact_columns()
+    _ensure_promotion_reminder_columns()
     _ensure_default_store_and_backfill()
