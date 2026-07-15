@@ -238,3 +238,23 @@ class StoreRequestLog(Base):
     outcome = Column(String(30), nullable=False)
     directory_flags = Column(Text, nullable=True)  # une raison "étonnante" par ligne, NULL si RAS
     store_id = Column(Integer, ForeignKey("stores.id"), nullable=True)
+
+
+class PasswordResetLog(Base):
+    """Trace discrète de CHAQUE tentative de réinitialisation de mot de passe
+    (/{code}/admin/forgot-password) — y compris quand l'email saisi ne
+    correspond pas au contact enregistré. Le message affiché au magasin reste
+    volontairement générique dans tous les cas (anti-énumération, voir
+    forgot_password_submit) ; cette table est la seule façon de diagnostiquer
+    après coup un échec silencieux (incident du 2026-07-15 où une demande
+    n'aboutissait à rien sans qu'on sache pourquoi)."""
+
+    __tablename__ = "password_reset_logs"
+
+    id = Column(Integer, primary_key=True)
+    submitted_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+    store_id = Column(Integer, ForeignKey("stores.id"), nullable=False)
+    submitted_email = Column(String(255), nullable=False)
+    matched = Column(Boolean, nullable=False)
+
+    store = relationship("Store")

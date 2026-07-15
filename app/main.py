@@ -40,6 +40,7 @@ from .models import (
     Brand,
     GeneratedCode,
     McpActivityLog,
+    PasswordResetLog,
     ProcessedEmail,
     Promotion,
     Store,
@@ -1610,6 +1611,20 @@ def superadmin_store_requests(request: Request, db: Session = Depends(get_db)):
     )
 
 
+@app.get("/superadmin/password-reset-attempts", response_class=HTMLResponse)
+def superadmin_password_reset_attempts(request: Request, db: Session = Depends(get_db)):
+    _require_superadmin(request)
+    logs = db.query(PasswordResetLog).order_by(PasswordResetLog.submitted_at.desc()).limit(200).all()
+    return templates.TemplateResponse(
+        "superadmin_password_reset_attempts.html",
+        {
+            "request": request,
+            "mount_prefix": _mount_prefix(request),
+            "logs": logs,
+        },
+    )
+
+
 @app.get("/superadmin/brands", response_class=HTMLResponse)
 def superadmin_brands(request: Request, db: Session = Depends(get_db)):
     _require_superadmin(request)
@@ -1840,12 +1855,18 @@ def forgot_password_form(request: Request, store: Store = Depends(get_store_for_
 @app.post("/{code}/admin/forgot-password", response_class=HTMLResponse)
 def forgot_password_submit(request: Request, db: Session = Depends(get_db), store: Store = Depends(get_store_for_admin_by_code), email: str = Form(...)):
     # Message générique quoi qu'il arrive (email inconnu ou non), pour ne pas
-    # révéler si une adresse est associée à ce magasin.
-    if store.contact_email and email.strip().lower() == store.contact_email.lower():
+    # révéler si une adresse est associée à ce magasin — la tentative est
+    # tout de même journalisée (PasswordResetLog) pour pouvoir diagnostiquer
+    # après coup un échec silencieux.
+    matched = bool(store.contact_email) and email.strip().lower() == store.contact_email.lower()
+    db.add(PasswordResetLog(store_id=store.id, submitted_email=email.strip(), matched=matched))
+    if matched:
         store.password_reset_token = generate_verification_token()
         store.password_reset_requested_at = datetime.datetime.utcnow()
         db.commit()
         send_password_reset_email(store)
+    else:
+        db.commit()
     return templates.TemplateResponse(
         "forgot_password.html",
         {"request": request, "mount_prefix": _mount_prefix(request), "url_prefix": f"{_store_url_prefix(request, store)}", "sent": True},

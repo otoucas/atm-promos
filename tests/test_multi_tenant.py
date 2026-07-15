@@ -8,7 +8,16 @@ from fastapi.testclient import TestClient
 
 from app import config, highco, main
 from app.auth import hash_password
-from app.models import INTEGRATION_ERPNEXT, INTEGRATION_STANDALONE, STATUS_ACTIVE, Brand, GeneratedCode, Promotion, Store
+from app.models import (
+    INTEGRATION_ERPNEXT,
+    INTEGRATION_STANDALONE,
+    STATUS_ACTIVE,
+    Brand,
+    GeneratedCode,
+    PasswordResetLog,
+    Promotion,
+    Store,
+)
 
 
 def _client(db):
@@ -1005,7 +1014,8 @@ def test_forgot_password_resets_and_logs_in(db, monkeypatch):
             c.post(f"/verify/{store.verification_token}", data={"password": "ancien-mdp-1234", "password_confirm": "ancien-mdp-1234"})
             c.post("/LYO/admin/logout")
 
-            # Une adresse qui ne correspond pas ne doit rien révéler et ne rien envoyer.
+            # Une adresse qui ne correspond pas ne doit rien révéler et ne rien envoyer,
+            # mais reste journalisée pour pouvoir diagnostiquer un échec silencieux après coup.
             c.post("/LYO/admin/forgot-password", data={"email": "quelquun-dautre@hellopharmacie.com"})
             assert reset_emails_sent == []
 
@@ -1016,6 +1026,11 @@ def test_forgot_password_resets_and_logs_in(db, monkeypatch):
         db.refresh(store)
         reset_token = store.password_reset_token
         assert reset_token
+
+        attempts = db.query(PasswordResetLog).filter(PasswordResetLog.store_id == store.id).order_by(PasswordResetLog.id).all()
+        assert [a.matched for a in attempts] == [False, True]
+        assert attempts[0].submitted_email == "quelquun-dautre@hellopharmacie.com"
+        assert attempts[1].submitted_email == store.contact_email
 
         with client as c:
             reset_submit = c.post(
