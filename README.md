@@ -177,3 +177,18 @@ Exploiter l'historique des promotions (dates de validité, marques) pour
 alimenter automatiquement les fiches produits du LGO et retirer les mentions
 de promotion une fois l'offre terminée. Le modèle `Promotion` de cette V1
 (marque, dates, statut) sert de base pour cette phase future.
+
+## Module Affiches (remplace PNR, en évaluation)
+
+Ce dépôt héberge aussi un second module, sans rapport avec les codes HighCo :
+la génération d'affiches promotionnelles prêtes à imprimer (`app/affiches.py`,
+modèles `AfficheProduit`/`AfficheSelection`), destiné à remplacer la partie
+"création visuelle" de l'outil PNR utilisé par le groupement. Import du
+tableau de suivi des promotions existant, 5 gabarits (WeasyPrint), aperçu
+instantané et publication côté siège (`/superadmin/affiches`), portail de
+sélection + téléchargement PDF côté pharmacie (`/{code}/admin/affiches`).
+
+Volontairement fermé aux vrais points de vente pendant la validation : seul
+le magasin `config.DEFAULT_STORE_CODE` voit le lien et peut accéder aux
+routes portail. Détail de la conception : page BookStack "Hello Affiches —
+Conception & état du projet" (book ATM).
