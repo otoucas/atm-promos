@@ -22,6 +22,30 @@
 </div>
 
 <div class="panel" style="padding:20px; margin-bottom:20px;">
+  <h3 style="margin-top:0;">Assistant IA « NIFTY Coopérateur »</h3>
+  <p style="color:var(--muted); font-size:0.9rem;">
+    Ce kit apprend à votre Claude à lire vos PDF de promotions HighCo/Nifty
+    (reçus par mail ou enregistrés dans un dossier), à vous les faire relire,
+    puis à les transmettre ici avec le jeton ci-dessus.
+  </p>
+  <p>
+    <a href="{{ mount_prefix|default('') }}/static/downloads/nifty-cooperateur.zip">Télécharger le kit</a>
+    — décompressez-le puis suivez la notice (<code>SKILL.md</code>) fournie à l'intérieur.
+  </p>
+  <form method="post" action="{{ url_prefix }}/admin/mcp/import-mode" style="margin:0;">
+    <p style="margin-bottom:8px;">Vous comptez importer vos promotions plutôt :</p>
+    <label style="display:flex; align-items:center; gap:8px; font-weight:normal; margin-bottom:6px;">
+      <input type="radio" name="import_mode" value="folder" style="width:auto;" onchange="this.form.requestSubmit()" {% if store.mcp_import_mode == 'folder' %}checked{% endif %}>
+      Depuis un dossier de PDF (le plus simple pour commencer)
+    </label>
+    <label style="display:flex; align-items:center; gap:8px; font-weight:normal;">
+      <input type="radio" name="import_mode" value="email" style="width:auto;" onchange="this.form.requestSubmit()" {% if store.mcp_import_mode == 'email' %}checked{% endif %}>
+      Depuis votre boîte mail (nécessite les identifiants de connexion à votre messagerie)
+    </label>
+  </form>
+</div>
+
+<div class="panel" style="padding:20px; margin-bottom:20px;">
   <h3 style="margin-top:0;">Mode de publication</h3>
   <form method="post" action="{{ url_prefix }}/admin/mcp/auto-publish" style="margin:0;">
     <label style="display:flex; align-items:center; gap:8px; font-weight:normal;">

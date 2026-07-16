@@ -1175,6 +1175,27 @@ def admin_mcp_auto_publish_legacy(
     return _admin_mcp_auto_publish_response(request, db, store, auto_publish)
 
 
+def _admin_mcp_import_mode_response(request: Request, db: Session, store: Store, import_mode: str):
+    _require_store_admin(request, store)
+    store.mcp_import_mode = import_mode or None
+    db.commit()
+    return RedirectResponse(f"{_store_url_prefix(request, store)}/admin/mcp", status_code=303)
+
+
+@app.post("/{code}/admin/mcp/import-mode")
+def admin_mcp_import_mode_for_store(
+    request: Request, db: Session = Depends(get_db), store: Store = Depends(get_store_for_admin_by_code), import_mode: str = Form("")
+):
+    return _admin_mcp_import_mode_response(request, db, store, import_mode)
+
+
+@app.post("/admin/mcp/import-mode")
+def admin_mcp_import_mode_legacy(
+    request: Request, db: Session = Depends(get_db), store: Store = Depends(get_default_store), import_mode: str = Form("")
+):
+    return _admin_mcp_import_mode_response(request, db, store, import_mode)
+
+
 def _admin_mcp_delete_log_response(log_id: int, request: Request, db: Session, store: Store):
     _require_store_admin(request, store)
     log = db.query(McpActivityLog).filter(McpActivityLog.id == log_id, McpActivityLog.store_id == store.id).first()

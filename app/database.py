@@ -53,6 +53,7 @@ def _ensure_store_contact_columns():
             "notification_email": "VARCHAR(255)",
             "notify_days_before_start": "INTEGER DEFAULT 3",
             "notify_days_before_end": "INTEGER DEFAULT 3",
+            "mcp_import_mode": "VARCHAR(10)",
         },
     )
 

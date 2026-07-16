@@ -10,7 +10,7 @@
   {% endif %}
   {% if store and store.integration == 'erpnext' %}
   <form method="post" action="{{ url_prefix }}/admin/poll-now" class="gmail-poll-form" style="margin:0;">
-    <button type="submit" class="gmail-poll-btn">Relancer l'import Gmail</button>
+    <button type="submit" class="gmail-poll-btn">Relancer l'import des mails</button>
   </form>
   {% endif %}
   <a href="{{ url_prefix|default('') }}/admin/help" class="nav-right">Aide</a>

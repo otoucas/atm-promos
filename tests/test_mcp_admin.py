@@ -116,6 +116,39 @@ def test_activity_log_visible_and_deletable(db):
         main.app.dependency_overrides.clear()
 
 
+def test_mcp_page_shows_skill_download_and_no_gmail_wording(db):
+    store = _make_store(db, "LYO")
+    client = _client(db)
+    try:
+        with client as c:
+            _login_as_store(c, db, store)
+            resp = c.get("/LYO/admin/mcp")
+        assert "NIFTY Coopérateur" in resp.text
+        assert "/static/downloads/nifty-cooperateur.zip" in resp.text
+        assert "Gmail" not in resp.text
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_set_import_mode(db):
+    store = _make_store(db, "LYO")
+    client = _client(db)
+    try:
+        with client as c:
+            _login_as_store(c, db, store)
+            assert store.mcp_import_mode is None
+            c.post("/LYO/admin/mcp/import-mode", data={"import_mode": "folder"})
+        db.refresh(store)
+        assert store.mcp_import_mode == "folder"
+
+        with client as c:
+            c.post("/LYO/admin/mcp/import-mode", data={"import_mode": "email"})
+        db.refresh(store)
+        assert store.mcp_import_mode == "email"
+    finally:
+        main.app.dependency_overrides.clear()
+
+
 def test_activity_log_deleted_when_store_deleted(db):
     """cascade="all, delete-orphan" sur Store.mcp_activity_logs : supprimer un
     magasin ne doit pas laisser de logs orphelins."""

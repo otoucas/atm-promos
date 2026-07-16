@@ -14,6 +14,9 @@ SOURCE_EMAIL = "email"
 SOURCE_MANUAL = "manual"
 SOURCE_MCP = "mcp"
 
+MCP_IMPORT_MODE_FOLDER = "folder"
+MCP_IMPORT_MODE_EMAIL = "email"
+
 # Un point de vente "erpnext" garde le fonctionnement historique (mot de passe
 # admin, relevé Gmail, synchro ERPNext) — un seul aujourd'hui : Artemare.
 # Un point de vente "standalone" est le format de dépannage : saisie manuelle
@@ -60,6 +63,12 @@ class Store(Base):
     # validée manuellement (comme les mails Artemare aujourd'hui).
     mcp_token = Column(String(64), nullable=True, unique=True, index=True)
     mcp_auto_publish = Column(Boolean, nullable=False, default=False)
+
+    # Mode d'import préféré du magasin pour la skill NIFTY Coopérateur
+    # (MCP_IMPORT_MODE_FOLDER ou MCP_IMPORT_MODE_EMAIL) — n'affecte pas le
+    # comportement du serveur, sert juste à afficher la bonne notice de
+    # configuration dans les réglages MCP. Nullable : pas encore choisi.
+    mcp_import_mode = Column(String(10), nullable=True)
 
     # Rappels par email avant le début/la fin d'une campagne, paramétrables par
     # point de vente (/{code}/admin/notifications) — demande Olivier du
